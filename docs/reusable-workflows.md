@@ -338,7 +338,10 @@ crossed releases affects this repository, what it does not use, and what needs a
 
 - Permissions: `contents: write`, `pull-requests: write`, `packages: read`. Platform's commands run in a
   job that can only read; a second job applies the diff, pushes `platform-bump/v<version>` and opens the
-  pull request. A branch that already exists is left alone.
+  pull request. A branch with an open pull request is left alone; a branch without one (a failed or closed pull
+  request) is replaced. When the pull request cannot be created, the run deletes the branch again and fails, so the
+  next run retries. The body is cut to fit GitHub's limit, keeping the start of the impact report and the end of the
+  bump log, with a note saying what was cut.
 - Secret `gpr_token` (optional): a classic PAT with `read:packages`, as for backend-ci.
 - Secret `bump_token` (optional): a classic PAT with the `repo` and `workflow` scopes. A pull request
   opened with the automatic `GITHUB_TOKEN` runs no CI, and that token may not push workflow changes, so

@@ -154,32 +154,68 @@ jobs:
             exit 0
           fi
           branch="platform-bump/v$TARGET"
+          # Gałąź z otwartym PR-em czeka na merge. Gałąź bez niego (nieudane `gh pr create`, zamknięty PR) to sierota:
+          # ten przebieg ją zastępuje, bo inaczej każdy kolejny kończyłby się na zielono, nic nie robiąc.
+          replace=""
           if git_auth ls-remote --exit-code --heads origin "$branch" > /dev/null 2>&1; then
-            echo "::notice::$branch already exists; merge or close its pull request to bump again."
-            exit 0
+            open=$(GH_TOKEN="$PUSH_TOKEN" gh pr list --head "$branch" --state open --json number --jq length)
+            if [ "$open" != 0 ]; then
+              echo "::notice::$branch already has an open pull request; merge or close it to bump again."
+              exit 0
+            fi
+            echo "::warning::$branch exists without an open pull request, so this run replaces it."
+            replace="--force"
           fi
 
           git switch -q -c "$branch"
           git add -A
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -q -m "chore(platform): bump Platform to $TARGET"
-          git_auth push -q origin "$branch"
+          git_auth push -q ${replace:+"$replace"} origin "$branch"
 
+          # GitHub odrzuca treść PR-a powyżej 65 536 znaków. Budżet liczy bajty (znak UTF-8 to co najmniej bajt), raport
+          # dostaje początek, log koniec; cięcie zawsze z widoczną notą i bez połówki znaku wielobajtowego.
+          body="$RUNNER_TEMP/platform-bump-pr.md"
+          body_limit=60000
+          report_limit=40000
+          head_bytes() { python3 -c 'import sys; n = int(sys.argv[1]); sys.stdout.write(sys.stdin.buffer.read()[:max(n, 0)].decode("utf-8", "ignore"))' "$1"; }
+          tail_bytes() { python3 -c 'import sys; n = int(sys.argv[1]); data = sys.stdin.buffer.read(); sys.stdout.write(data[len(data) - n:].decode("utf-8", "ignore") if n > 0 else "")' "$1"; }
           {
             echo "Bumps Platform to $TARGET with \`platform-bump\`: the Gradle and npm pins, the frontend canon,"
             echo "the reusable workflow references, the lockfiles and the dependency verification metadata."
             if [ -n "$note" ]; then echo; echo "> $note"; fi
             echo
             # Raport wpływu (platform-bump --report): co z wydań dotyczy tego repo, czego tu nie ma, co wymaga akcji.
-            if [ -s "${BUMP_REPORT:-}" ]; then cat "$BUMP_REPORT"; echo; fi
+            if [ -s "${BUMP_REPORT:-}" ]; then
+              if [ "$(wc -c < "$BUMP_REPORT")" -gt "$report_limit" ]; then
+                head_bytes "$report_limit" < "$BUMP_REPORT"
+                echo
+                echo
+                echo "> The impact report is cut to fit GitHub's pull request size limit; the full report is in this run's platform-bump artifact."
+              else
+                cat "$BUMP_REPORT"
+              fi
+              echo
+            fi
             echo "Review the release notes and the consumer actions below before merging."
             echo
+          } > "$body"
+          log_limit=$((body_limit - $(wc -c < "$body") - 300))
+          {
+            if [ "$(wc -c < "$BUMP_LOG")" -gt "$log_limit" ]; then
+              echo "> The bump log is cut to fit GitHub's pull request size limit; its start is in the log of the Run platform-bump job."
+              echo
+            fi
             echo '```text'
-            tail -c 60000 "$BUMP_LOG"
+            tail_bytes "$log_limit" < "$BUMP_LOG"
             echo '```'
-          } > "$RUNNER_TEMP/platform-bump-pr.md"
-          GH_TOKEN="$PUSH_TOKEN" gh pr create --base "$BASE" --head "$branch" \
-            --title "chore(platform): bump Platform to $TARGET" --body-file "$RUNNER_TEMP/platform-bump-pr.md"
+          } >> "$body"
+          if ! GH_TOKEN="$PUSH_TOKEN" gh pr create --base "$BASE" --head "$branch" \
+            --title "chore(platform): bump Platform to $TARGET" --body-file "$body"; then
+            git_auth push -q origin --delete "$branch" || true
+            echo "::error::The pull request for $branch could not be created, so the branch was deleted again and the next run retries."
+            exit 1
+          fi
           if [ -z "${BUMP_TOKEN:-}" ]; then
             echo "::warning::The pull request was opened with GITHUB_TOKEN, so its CI does not start. Add a bump_token secret to run it."
           fi

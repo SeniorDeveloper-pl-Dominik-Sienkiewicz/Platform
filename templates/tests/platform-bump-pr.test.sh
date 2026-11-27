@@ -30,6 +30,8 @@ mkdir -p "$tmp/bin"
 cat > "$tmp/bin/gh" <<'GH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GH_CALLS"
+if [[ "$1 $2" == "pr list" ]]; then printf '%s\n' "${GH_OPEN_PRS:-0}"; exit 0; fi
+if [[ "$1 $2" == "pr create" && -n "${GH_CREATE_FAILS:-}" ]]; then echo 'pull request create failed: body is too long' >&2; exit 1; fi
 previous=""
 for arg in "$@"; do [[ "$previous" == --body-file ]] && cp "$arg" "$GH_BODY"; previous="$arg"; done
 echo "https://github.com/owner/repo/pull/1"
@@ -63,7 +65,8 @@ run() {
   : > "$tmp/gh-calls"
   RC=0
   OUT=$(cd "$work" && PATH="$tmp/bin:$PATH" GH_CALLS="$tmp/gh-calls" GH_BODY="$tmp/gh-body" RUNNER_TEMP="$tmp" \
-    TARGET="${TARGET-1.6.0}" BASE=main BUMP_LOG="$tmp/bump.log" BUMP_TOKEN="$token" PUSH_TOKEN="${token:-github-token}" \
+    TARGET="${TARGET-1.6.0}" BASE=main BUMP_LOG="${BUMP_LOG:-$tmp/bump.log}" BUMP_REPORT="${BUMP_REPORT:-}" \
+    BUMP_TOKEN="$token" PUSH_TOKEN="${token:-github-token}" GH_OPEN_PRS="${GH_OPEN_PRS:-0}" GH_CREATE_FAILS="${GH_CREATE_FAILS:-}" \
     bash "$tmp/open-pr.sh" 2>&1) || RC=$?
 }
 
@@ -79,10 +82,51 @@ grep -q '^pr create --base main --head platform-bump/v1.6.0 --title chore(platfo
 grep -q 'CONSUMER ACTION REQUIRED' "$tmp/gh-body" || fail 'the pull request body must carry the bump log'
 if grep -q 'GITHUB_TOKEN' <<<"$OUT"; then fail 'no warning about GITHUB_TOKEN when a bump_token is set'; fi
 
-# (b) the branch already exists: nothing is pushed or opened
+# (b) the branch already has an open pull request: nothing is pushed or opened
+work=$(seed open-pr)
+bump "$work"
+git -C "$work" push -q origin main:refs/heads/platform-bump/v1.6.0
+GH_OPEN_PRS=1 run "$work" pat
+[[ $RC -eq 0 ]] || fail "an open bump pull request is not an error (exit $RC)"
+if grep -q '^pr create' "$tmp/gh-calls"; then fail 'no second pull request for a branch with an open one'; fi
+git -C "$work.git" show platform-bump/v1.6.0:backend/gradle.properties | grep -qx 'platformVersion=1.5.31' \
+  || fail 'a branch with an open pull request must stay as it is'
+
+# (f) the branch exists without an open pull request (a failed create, or a closed pull request): it is replaced
+#     and the pull request opened, so the next run does not stay green doing nothing
+work=$(seed orphan)
+bump "$work"
+git -C "$work" push -q origin main:refs/heads/platform-bump/v1.6.0
 run "$work" pat
-[[ $RC -eq 0 ]] || fail "an existing bump branch is not an error (exit $RC)"
-[[ ! -s "$tmp/gh-calls" ]] || fail 'no second pull request for an existing branch'
+[[ $RC -eq 0 ]] || fail "an orphan bump branch must be replaced (exit $RC)"
+grep -q '^pr create' "$tmp/gh-calls" || fail 'an orphan bump branch must get its pull request'
+git -C "$work.git" show platform-bump/v1.6.0:backend/gradle.properties | grep -qx 'platformVersion=1.6.0' \
+  || fail 'the orphan branch must carry the new bump'
+
+# (g) the pull request cannot be created: the run fails and leaves no branch behind
+work=$(seed create-fails)
+bump "$work"
+GH_CREATE_FAILS=1 run "$work" pat
+[[ $RC -ne 0 ]] || fail 'a failed pull request creation must fail the run'
+if git -C "$work.git" rev-parse --verify -q refs/heads/platform-bump/v1.6.0 > /dev/null; then
+  fail 'a failed pull request creation must not leave the bump branch on origin'
+fi
+grep -q '::error::' <<<"$OUT" || fail 'a failed pull request creation must say so as an error'
+
+# (h) a report and a log far above GitHub's 65,536-character body limit: the body is cut with a visible note,
+#     keeps the start of the report and the end of the log, and stays valid UTF-8
+work=$(seed large)
+bump "$work"
+{ echo 'REPORT START'; for _ in $(seq 1 2000); do echo '- catalog `libs.something-quite-long-here` 1.0.0 -> 1.0.1 ż'; done; } > "$tmp/large-report.md"
+{ for _ in $(seq 1 2000); do echo 'Resolving dependencies of a configuration, a long log line ł'; done; echo 'LOG END'; } > "$tmp/large.log"
+BUMP_REPORT="$tmp/large-report.md" BUMP_LOG="$tmp/large.log" run "$work" pat
+[[ $RC -eq 0 ]] || fail "a large report must still open a pull request (exit $RC)"
+chars=$(LC_ALL=en_US.UTF-8 wc -m < "$tmp/gh-body" | tr -d ' ')
+[[ $chars -le 65536 ]] || fail "the pull request body must stay within GitHub's limit, got $chars characters"
+grep -q 'REPORT START' "$tmp/gh-body" || fail 'a cut body must keep the start of the report'
+grep -q 'LOG END' "$tmp/gh-body" || fail 'a cut body must keep the end of the log'
+grep -q 'cut to fit' "$tmp/gh-body" || fail 'a cut body must say what was cut'
+iconv -f UTF-8 -t UTF-8 "$tmp/gh-body" > /dev/null || fail 'a cut body must stay valid UTF-8'
 
 # (c) without a bump_token the workflow change is dropped, and the pull request says why
 work=$(seed without-token)
@@ -105,7 +149,7 @@ if git -C "$work.git" rev-parse --verify -q refs/heads/platform-bump/v1.6.0 > /d
 TARGET="" run "$work" pat
 [[ $RC -ne 0 ]] || fail 'a run without a target version must fail'
 
-echo 'OK: the bump pull request is opened once, carries the log, and respects what GITHUB_TOKEN may push'
+echo 'OK: the bump pull request is opened once, recovers an orphan branch, fits the body limit and respects what GITHUB_TOKEN may push'
 )
 
 # --- impact-report ---
