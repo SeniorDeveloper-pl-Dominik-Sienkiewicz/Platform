@@ -28,7 +28,7 @@ on:
         type: string
         default: "build"
       verify-provenance:
-        description: "Verify the artifact attestation of every Platform jar the build resolved (pl.seniordeveloper in the Gradle cache) against Platform's release.yml; Platform 1.6.0 and newer attest their jars."
+        description: "Verify the artifact attestation of every Platform jar and catalog TOML the build resolved (pl.seniordeveloper in the Gradle cache), and of the POM and module metadata (platform-bom among them) from 2.1.1 on, against Platform's release.yml; Platform 1.6.0 and newer attest their jars and catalog."
         type: boolean
         default: false
       lint-task:
@@ -115,8 +115,10 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.gpr_token || secrets.GITHUB_TOKEN }}
 
-      # Proweniencja (N-REL-16): jary Platform z cache Gradle'a muszą mieć atestację release.yml Platform, czyli
-      # pochodzić z jego wydania, nie z podmienionego rejestru. Blok testuje templates/tests/backend-ci-provenance.test.sh.
+      # Proweniencja (N-REL-16): jary i TOML katalogu Platform z cache Gradle'a muszą mieć atestację release.yml Platform,
+      # czyli pochodzić z jego wydania, nie z podmienionego rejestru; od wydania po 2.1.0 także POM i .module (platform-bom
+      # niesie ograniczenia i podłogi CVE). Starsze wydania metadanych nie atestowały, więc ich metadane przechodzą.
+      # Blok testuje templates/tests/backend-ci-provenance.test.sh.
       - name: Verify the provenance of the Platform artifacts
         if: ${{ inputs.verify-provenance }}
         env:
@@ -125,27 +127,34 @@ jobs:
           # >>> verify-provenance
           set -euo pipefail
           cache="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/modules-2/files-2.1"
-          jars=()
-          while IFS= read -r jar; do jars+=("$jar"); done < <(find "$cache" -path '*/pl.seniordeveloper*' -name '*.jar' \
+          # Pierwsze wydanie, którego release.yml atestuje POM i .module; zmień, jeśli wyjdzie wcześniej inne wydanie.
+          metadata_attested_since=2.1.1
+          files=()
+          while IFS= read -r file; do files+=("$file"); done < <(find "$cache" -path '*/pl.seniordeveloper*' \
+            \( -name '*.jar' -o -name '*.toml' -o -name '*.pom' -o -name '*.module' \) \
             ! -name '*-sources.jar' ! -name '*-javadoc.jar' 2>/dev/null | sort)
-          if [ "${#jars[@]}" -eq 0 ]; then
+          if ! printf '%s\n' "${files[@]}" | grep -q '\.jar$'; then
             echo "::error title=PLAT-PROV-001::[PLAT-PROV-001] No Platform jar in the Gradle cache, so there is nothing to verify; did the build resolve Platform?"
             exit 1
           fi
           failed=0
-          for jar in "${jars[@]}"; do
+          for file in "${files[@]}"; do
             # W cache Gradle ścieżka kończy się <version>/<hash>/<plik>. Certyfikat zachowuje właściciela z chwili wydania.
-            version_dir=$(dirname "$(dirname "$jar")")
+            version_dir=$(dirname "$(dirname "$file")")
             version=${version_dir##*/}
+            case "$file" in
+              *.pom | *.module)
+                [ "$(printf '%s\n%s\n' "$metadata_attested_since" "$version" | sort -V | head -1)" = "$metadata_attested_since" ] || continue ;;
+            esac
             case "$version" in
               1.*) repository=DominikSienkiewicz/Platform ;;
               *) repository=SeniorDeveloper-pl-Dominik-Sienkiewicz/Platform ;;
             esac
-            if gh attestation verify "$jar" --repo "$repository" \
+            if gh attestation verify "$file" --repo "$repository" \
               --signer-workflow "$repository/.github/workflows/release.yml" --source-ref "refs/tags/v$version" > /dev/null 2>&1; then
-              echo "verified $(basename "$jar")"
+              echo "verified $(basename "$file")"
             else
-              echo "::error title=PLAT-PROV-001::[PLAT-PROV-001] $(basename "$jar") carries no attestation from Platform's release.yml"
+              echo "::error title=PLAT-PROV-001::[PLAT-PROV-001] $(basename "$file") carries no attestation from Platform's release.yml"
               failed=1
             fi
           done

@@ -41,8 +41,10 @@ The Gradle step sets `PLATFORM_TEST_RETRY=detect`: a failing test runs once more
 then still fails the build, and a "Test health" summary lists the flaky tests, the `quarantineTest` result
 when the caller runs it, and every quarantine deadline (`-Pplatform.test.retry=off` in `gradle-task` turns
 the retry off). With `verify-provenance: true` the job checks the artifact attestation of every Platform
-jar the build resolved against Platform's `release.yml` and fails with
-[PLAT-PROV-001](gates.md#plat-prov-001) on one without it; Platform attests its jars from 1.6.0 on.
+jar and catalog TOML the build resolved against Platform's `release.yml`, and of the POM and Gradle module
+metadata from 2.1.1 on (`platform-bom` publishes nothing else), and fails with
+[PLAT-PROV-001](gates.md#plat-prov-001) on a file without it. Platform attests its jars and catalog from 1.6.0
+on and its POM and module metadata from 2.1.1 on; the metadata of older releases is not checked.
 
 - Permissions: `contents: read`, `packages: read`.
 - Secret `gpr_token` (optional): a classic PAT with `read:packages`. Without it the caller's
@@ -72,7 +74,7 @@ Inputs:
 | `java-version` | string | `27` | JDK that runs Gradle. Platform builds and tests its plugins with Gradle on Java 27 (ADR-0034), the only JDK it supports for Gradle. |
 | `toolchain-java-version` | string | `27` | Toolchain JDK that seniordev.java-conventions compiles with; installed by setup-java, not Foojay. |
 | `gradle-task` | string | `build` | Gradle task arguments as one line, separated by whitespace; passed literally, without shell parsing. The step sets PLATFORM_TEST_RETRY=detect, so a flaky test is retried once and still fails the build; -Pplatform.test.retry=off here turns that off. |
-| `verify-provenance` | boolean | `false` | Verify the artifact attestation of every Platform jar the build resolved (pl.seniordeveloper in the Gradle cache) against Platform's release.yml; Platform 1.6.0 and newer attest their jars. |
+| `verify-provenance` | boolean | `false` | Verify the artifact attestation of every Platform jar and catalog TOML the build resolved (pl.seniordeveloper in the Gradle cache), and of the POM and module metadata (platform-bom among them) from 2.1.1 on, against Platform's release.yml; Platform 1.6.0 and newer attest their jars and catalog. |
 | `lint-task` | string | empty | Optional Gradle task arguments run as a first step before gradle-task, such as `lint` from seniordev.java-conventions, so style failures arrive before the tests; empty skips the step. |
 | `red-proof` | boolean | `false` | On a pull_request event, run the tests of every fix: commit against its parent's src/main and .github/workflows. Each fix must add or change a test class that fails on the parent. Requires full pull request history. |
 | `red-proof-tasks` | string | `test` | Gradle test tasks the red-proof job runs, separated by whitespace, each with --tests for every test class of the fix: commit, such as `test integrationTest`. |

@@ -68,6 +68,11 @@ gradle=$(job gradle)
 publish=$(grep -n 'name: Publish Maven' <<<"$gradle" | cut -d: -f1)
 attest=$(grep -n 'uses: actions/attest@' <<<"$gradle" | cut -d: -f1)
 [[ "$attest" -gt "$publish" ]] || fail 'the gradle job attests after it publishes'
+# platform-bom publikuje tylko POM i .module, a backend-ci weryfikuje je (PLAT-PROV-001): atestacja musi je objąć.
+for subject in 'gradle/*/build/libs/*.jar' 'gradle/catalog/build/version-catalog/*.toml' \
+  'gradle/*/build/publications/*/pom-default.xml' 'gradle/*/build/publications/*/module.json'; do
+  grep -qxF "            $subject" <<<"$gradle" || fail "the gradle job must attest $subject"
+done
 npm=$(job npm)
 pack=$(grep -n 'name: Pack the packages to publish' <<<"$npm" | cut -d: -f1)
 attest=$(grep -n 'uses: actions/attest@' <<<"$npm" | cut -d: -f1)

@@ -149,10 +149,12 @@ an image (`security-scan.yml`, `container-scan.yml`).
 
 ### PLAT-PROV-001
 
-**Cause:** with `verify-provenance: true`, `backend-ci.yml` found a Platform jar in the Gradle cache without an
-artifact attestation from Platform's `release.yml`, or found no Platform jar at all (N-REL-16).
-**Fix:** a jar of a release older than 1.6.0 has no attestation: bump Platform. Otherwise the jar did not come
-from a Platform release; resolve it again from GitHub Packages, and report it if it still fails.
+**Cause:** with `verify-provenance: true`, `backend-ci.yml` found a Platform file in the Gradle cache without an
+artifact attestation from Platform's `release.yml`, or found no Platform jar at all (N-REL-16). It checks every
+jar and catalog TOML, and the `.pom` and `.module` metadata of releases from 2.1.1 on, so a substituted
+`platform-bom` or catalog fails too. Metadata of 2.1.0 and older carries no attestation and is not checked.
+**Fix:** a jar or catalog of a release older than 1.6.0 has no attestation: bump Platform. Otherwise the file did
+not come from a Platform release; resolve it again from GitHub Packages, and report it if it still fails.
 
 ### PLAT-RED-001
 
