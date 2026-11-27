@@ -457,6 +457,12 @@ and SkillSprintPlus, bump to 1.5.26). The same class of failure hit tool configu
 Never add `--dry-run` to these calls. Gradle then writes `verification-metadata.dryrun.xml`, leaves
 the real file untouched and still reports `BUILD SUCCESSFUL`.
 
+Both passes, and the single `dependencies --write-locks` pass of a repository without the metadata file, run
+only when the bump changed a Gradle input: a pin, the wrapper or a file an upgrade migration rewrote. A weekly
+run that finds the repository already on the target release changes none of them, so it skips Gradle and
+prints `no Gradle input changed`. Changes to the frontend, the workflows, the agent blocks and the lockfiles
+themselves do not count as Gradle inputs.
+
 ### Testing an unreleased change
 
 Do not release just to try a change in a consumer. Publish locally and point the consumer at that

@@ -59,7 +59,7 @@ case "$LAYER" in
   backend)
     [[ -n "$ACTION" ]] || usage
     file="$ROOT/backend/gradle.properties"
-    current="$(grep -E '^version=' "$file" | head -1 | cut -d= -f2 | tr -d '[:space:]')"
+    current="$({ grep -E '^version=' "$file" || true; } | head -1 | cut -d= -f2 | tr -d '[:space:]')"
     [[ -n "$current" ]] || { echo "No 'version=' in $file" >&2; exit 1; }
     next="$(bump_semver "$current" "$ACTION")"
     sed_inplace "s/^version=.*/version=${next}/" "$file"
@@ -93,7 +93,7 @@ databaseChangeLog:
       id: ${seq}-${ARG}
       author: ${AUTHOR}
       changes: []
-      # TODO: dodaj operacje (createTable/addColumn/sql...) — migracje forward-only.
+      # TODO: add the operations (createTable/addColumn/sql...); migrations are forward-only.
 YAML
     # master może być pustą listą "[]" — zamień na blok listowy zanim dopniesz include
     if grep -qE '^databaseChangeLog:[[:space:]]*\[[[:space:]]*\][[:space:]]*$' "$master"; then

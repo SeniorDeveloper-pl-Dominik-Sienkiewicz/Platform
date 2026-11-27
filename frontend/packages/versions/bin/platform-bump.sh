@@ -29,6 +29,7 @@
 # z --refresh-dependencies, więc ten krok pobiera metadane od nowa i trwa wyraźnie dłużej niż sam bump
 # pinów — to celowe, powody niżej przy bloku. Pierwszy bump po dodaniu drugiego przebiegu poszerza
 # gradle.lockfile o konfiguracje spoza grafu `build` (pitest, cyclonedxBom) — jednorazowy, celowy diff.
+# Bez zmiany wejścia Gradle (pin, wrapper, plik migracji) oba przebiegi są pomijane.
 #
 # Logika wydania DOCELOWEGO (N-DX-4): kopia, która nie jest wydaniem celu, po ustaleniu celu pobiera paczkę
 # versions@TARGET z assetów GitHub Release (publiczne, bez PAT-a, SHA256SUMS i atestacja) i oddaje jej sterowanie,
@@ -101,12 +102,11 @@ CATALOG_PKG="pl.seniordeveloper.platform-catalog"
 
 TOKEN="${GPR_TOKEN:-${GITHUB_TOKEN:-}}"
 if [[ -z "$TOKEN" ]] && [[ -f "$HOME/.gradle/gradle.properties" ]]; then
-  TOKEN="$(grep -E '^gpr\.key=' "$HOME/.gradle/gradle.properties" | cut -d= -f2- | tr -d ' ')"
+  TOKEN="$({ grep -E '^gpr\.key=' "$HOME/.gradle/gradle.properties" || true; } | cut -d= -f2- | tr -d ' ')"
 fi
-[[ -z "$TOKEN" ]] && { echo "No token: set GPR_TOKEN or GITHUB_TOKEN, or gpr.key in ~/.gradle/gradle.properties."; exit 1; }
+[[ -z "$TOKEN" ]] && { echo "No token: set GPR_TOKEN or GITHUB_TOKEN, or gpr.key in ~/.gradle/gradle.properties." >&2; exit 1; }
 
 VERSIONS_JSON=""
-RELEASES_JSON=""
 ACTIONS_FILE=""
 YANKED_FILE=""
 TARGET_PACKAGE=""
@@ -177,7 +177,7 @@ finish() {
     fi
   fi
   rm -rf "$SNAPSHOT" "$TARGET_PACKAGE"
-  rm -f "$VERSIONS_JSON" "$RELEASES_JSON" "$ACTIONS_FILE" "$YANKED_FILE"
+  rm -f "$VERSIONS_JSON" "$ACTIONS_FILE" "$YANKED_FILE"
 }
 trap 'finish $?' EXIT
 # platform-bump:transaction-end
@@ -438,15 +438,36 @@ if [[ -n "${GITHUB_OUTPUT:-}" ]]; then echo "target=$TARGET" >> "$GITHUB_OUTPUT"
 
 # Notatki każdego wydania z (CURRENT, TARGET] — źródłem są GitHub Releases, czyli sekcje CHANGELOG.md.
 ACTIONS_FILE="$(mktemp)"
-RELEASES_JSON="$(mktemp)"
-if [[ -n "$CURRENT" ]] && curl -fsSL --proto '=https' --proto-redir '=https' \
-  -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/$OWNER/Platform/releases?per_page=100" -o "$RELEASES_JSON"; then
+# Wszystkie strony listy wydań (Link: rel="next"), nie tylko 100 najnowszych: starszy pin przechodzi przez
+# wydania spoza pierwszej strony, a ich akcje konsumenta nie mogą zniknąć po cichu.
+# platform-bump:releases
+RELEASE_PAGES=()
+RELEASE_NOTES_READ=false
+if [[ -n "$CURRENT" ]]; then
+  RELEASE_NOTES_READ=true
+  release_page=1
+  while :; do
+    : > "$SNAPSHOT/release-headers"
+    if ! curl -fsSL --proto '=https' --proto-redir '=https' \
+      -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" -D "$SNAPSHOT/release-headers" \
+      "https://api.github.com/repos/$OWNER/Platform/releases?per_page=100&page=$release_page" \
+      -o "$SNAPSHOT/releases-$release_page.json"; then
+      RELEASE_NOTES_READ=false
+      break
+    fi
+    RELEASE_PAGES+=("$SNAPSHOT/releases-$release_page.json")
+    grep -Eiq '^link:.*rel="next"' "$SNAPSHOT/release-headers" || break
+    release_page=$((release_page + 1))
+  done
+fi
+# platform-bump:releases-end
+if [[ "$RELEASE_NOTES_READ" == true ]]; then
   echo "==> Release notes from $CURRENT to $TARGET:"
-  python3 - "$RELEASES_JSON" "$CURRENT" "$TARGET" "$ACTIONS_FILE" <<'PY'
+  python3 - "${RELEASE_PAGES[0]}" "$CURRENT" "$TARGET" "$ACTIONS_FILE" "${RELEASE_PAGES[@]:1}" <<'PY'
 # platform-bump:notes — marker wycinania dla frontend/packages/versions/test/release-notes.test.sh
 import json, re, sys
 
+# Pierwsza strona listy wydań, potem kolejne strony (argv[5:]).
 releases_path, current, target, actions_path = sys.argv[1:5]
 key = lambda version: [int(part) for part in version.split(".")]
 
@@ -463,7 +484,7 @@ def consumer_action(body):
     return "\n".join(lines).strip()
 
 crossed = []
-for release in json.load(open(releases_path)):
+for release in (release for page in [releases_path, *sys.argv[5:]] for release in json.load(open(page))):
     match = re.fullmatch(r"v([0-9]+\.[0-9]+\.[0-9]+)", release.get("tag_name") or "")
     if match and key(current) < key(match.group(1)) <= key(target):
         crossed.append((match.group(1), (release.get("body") or "").replace("\r\n", "\n")))
@@ -827,7 +848,26 @@ done
 # platform-bump:wrapper-end
 
 # platform-bump:gradle
-if [[ -f backend/settings.gradle.kts ]]; then
+# Regeneracja kosztuje pełny build z --refresh-dependencies, więc idzie tylko wtedy, gdy bump zmienił wejście Gradle
+# (piny, wrapper, plik dopisany przez migrację). Frontend, workflowy, bloki agentów i same pliki wynikowe (lockfile'e,
+# verification-metadata) nim nie są; nieznany zmieniony plik liczy się jako wejście, czyli regeneracja zostaje.
+gradle_inputs_changed() {
+  local file
+  for file in "${CANDIDATES[@]}"; do
+    case "$file" in
+      frontend/* | .github/* | *gradle.lockfile | *verification-metadata.xml | AGENTS.md | */AGENTS.md | CLAUDE.md | */CLAUDE.md) continue ;;
+    esac
+    if [[ -e "$SNAPSHOT/files/$file" ]]; then
+      [[ -e "$file" ]] && cmp -s "$SNAPSHOT/files/$file" "$file" || return 0
+    elif [[ -e "$file" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+if [[ -f backend/settings.gradle.kts ]] && ! gradle_inputs_changed; then
+  echo "==> Backend: no Gradle input changed, so the lockfiles and verification metadata stay as they are"
+elif [[ -f backend/settings.gradle.kts ]]; then
   echo "==> Backend: regenerating the locked state (--write-locks)"
   if [[ -f backend/gradle/verification-metadata.xml ]]; then
     ( cd backend && ./gradlew build --write-locks --write-verification-metadata sha256 --refresh-dependencies --no-daemon )

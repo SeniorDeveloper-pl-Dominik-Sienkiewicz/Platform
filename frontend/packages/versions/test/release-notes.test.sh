@@ -60,4 +60,42 @@ python3 "$WORK/notes.py" "$WORK/releases.json" 1.6.1 1.6.1 "$WORK/none.txt" | gr
   || fail 'a bump to the current version must say there are no notes'
 [[ ! -s "$WORK/none.txt" ]] || fail 'a bump without releases must not report consumer actions'
 
+# --- Notes past the first page of 100 releases: every page counts --------------------------------
+printf '[{"tag_name": "v1.6.2", "body": "None."}]\n' > "$WORK/page-1.json"
+printf '[{"tag_name": "v1.5.32", "body": "### Consumer action required\\n\\n- Old action.\\n"}]\n' > "$WORK/page-2.json"
+notes=$(python3 "$WORK/notes.py" "$WORK/page-1.json" 1.5.31 1.6.2 "$WORK/paged.txt" "$WORK/page-2.json")
+grep -q '^===== Platform 1.5.32 =====$' <<<"$notes" || fail 'the notes of a release on the second page must be printed'
+grep -qF -- '- Old action.' "$WORK/paged.txt" || fail 'the consumer action of a release on the second page must be reported'
+
+# --- The fetch follows rel="next" of the releases listing -------------------------------------------
+awk 'index($0, "# platform-bump:releases-end") { exit } f { print } index($0, "# platform-bump:releases") { f = 1 }' "$SRC" > "$WORK/releases.sh"
+[[ -s "$WORK/releases.sh" ]] || fail "no '# platform-bump:releases' block in $SRC"
+mkdir -p "$WORK/bin" "$WORK/snapshot"
+cat > "$WORK/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+out="" headers="" url=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) out="$2"; shift ;;
+    -D) headers="$2"; shift ;;
+    -H | --proto | --proto-redir) shift ;;
+    https://*) url="$1" ;;
+  esac
+  shift
+done
+case "$url" in
+  *'releases?per_page=100&page=1') cp "$PAGE_1" "$out"; printf 'Link: <https://api.github.com/page2>; rel="next"\r\n' > "$headers" ;;
+  *'releases?per_page=100&page=2') cp "$PAGE_2" "$out"; : > "$headers" ;;
+  *) exit 22 ;;
+esac
+STUB
+chmod +x "$WORK/bin/curl"
+# shellcheck disable=SC2016 # zmienne rozwija dopiero uruchomiony blok
+printf '%s\n' 'printf "%s\n" "$RELEASE_NOTES_READ" "${RELEASE_PAGES[@]}"' >> "$WORK/releases.sh"
+pages=$(cd "$WORK" && PATH="$WORK/bin:$PATH" PAGE_1="$WORK/page-1.json" PAGE_2="$WORK/page-2.json" CURRENT=1.5.31 TOKEN=t OWNER=o \
+  SNAPSHOT="$WORK/snapshot" bash "$WORK/releases.sh")
+[[ "$(head -1 <<<"$pages")" == true ]] || fail "a paged listing must count as read: $pages"
+[[ "$(sed -n 3p <<<"$pages")" == *2.json ]] && cmp -s "$(sed -n 3p <<<"$pages")" "$WORK/page-2.json" \
+  || fail "the fetch must follow rel=next to the second page: $pages"
+
 echo 'OK: platform-bump stays in the current MAJOR and prints the notes and consumer actions it crosses'

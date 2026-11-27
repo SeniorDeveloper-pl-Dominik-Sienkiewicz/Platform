@@ -48,7 +48,14 @@ setup_repo() {
   local case_name="$1" with_metadata="$2"
   REPO="$WORK/repo-$case_name"
   mkdir -p "$REPO/backend/gradle"
-  : > "$REPO/backend/settings.gradle.kts"
+  # Migawka sprzed bumpa (jak snapshot() w binie): pin 1.0.0; bump przepisał go na 1.1.0, chyba że $changed=no.
+  mkdir -p "$REPO/snapshot/files/backend"
+  printf 'platform-catalog:1.0.0\n' > "$REPO/snapshot/files/backend/settings.gradle.kts"
+  if [[ "${3:-yes}" = "yes" ]]; then
+    printf 'platform-catalog:1.1.0\n' > "$REPO/backend/settings.gradle.kts"
+  else
+    cp "$REPO/snapshot/files/backend/settings.gradle.kts" "$REPO/backend/settings.gradle.kts"
+  fi
   [[ "$with_metadata" = "yes" ]] && : > "$REPO/backend/gradle/verification-metadata.xml"
   cat > "$REPO/backend/gradlew" <<'STUB'
 #!/usr/bin/env bash
@@ -57,7 +64,12 @@ STUB
   chmod +x "$REPO/backend/gradlew"
 }
 
-run_block() { ( cd "$REPO" && bash "$WORK/gradle.sh" >/dev/null ); }
+# Blok czyta CANDIDATES i SNAPSHOT binu; atrapa podaje te same nazwy, bo tablic nie da się wyeksportować.
+run_block() {
+  ( cd "$REPO" && bash -c 'CANDIDATES=(backend/settings.gradle.kts frontend/package.json .github/workflows/ci.yml backend/gradle.lockfile)
+    SNAPSHOT="$PWD/snapshot"
+    source "$1"' _ "$WORK/gradle.sh" > "$REPO/block.out" )
+}
 
 # Argumenty n-tego wywołania gradlew (1-indeksowane) oraz ich liczba.
 call() { sed -n "${1}p" "$REPO/gradlew.args"; }
@@ -133,5 +145,25 @@ mkdir -p "$REPO"
 run_block || fail "repo bez backendu: blok zakończył się błędem zamiast po prostu nic nie robić"
 [[ -f "$REPO/gradlew.args" ]] && fail "repo bez backendu: gradlew nie powinien zostać wywołany"
 
-[[ "$fails" -eq 0 ]] && echo "gradle-regen: OK (3 przypadki)"
+# --- Przypadek 4: bump nie zmienił żadnego wejścia Gradle --------------------------------------------
+# Cotygodniowy bump bez nowego wydania (piny, wrapper i migracje bez zmian) nie może odpalać pełnego przeliczenia
+# z --refresh-dependencies: zmiany frontendu, workflowów i samych lockfile'i nie są wejściem Gradle.
+setup_repo unchanged yes no
+mkdir -p "$REPO/frontend" "$REPO/.github/workflows" "$REPO/snapshot/files/frontend"
+printf '{}\n' > "$REPO/snapshot/files/frontend/package.json"
+printf '{"a":1}\n' > "$REPO/frontend/package.json"
+printf 'uses: x@v2\n' > "$REPO/.github/workflows/ci.yml"
+run_block || fail "no Gradle input changed: the block must not fail"
+[[ -f "$REPO/gradlew.args" ]] && fail "no Gradle input changed: gradlew must not run"
+grep -qF 'no Gradle input changed' "$REPO/block.out" || fail "no Gradle input changed: the block must say why it skipped the regeneration"
+
+# --- Przypadek 5: wejście Gradle spoza pinów (plik dopisany przez migrację) -----------------------
+setup_repo migrated no no
+mkdir -p "$REPO/snapshot/files/backend"
+printf 'plugins {}\n' > "$REPO/snapshot/files/backend/build.gradle.kts"
+printf 'plugins { java }\n' > "$REPO/backend/build.gradle.kts"
+( cd "$REPO" && bash -c 'CANDIDATES=(backend/settings.gradle.kts backend/build.gradle.kts); SNAPSHOT="$PWD/snapshot"; source "$1"' _ "$WORK/gradle.sh" >/dev/null )
+[[ "$(call_count)" -eq 1 ]] || fail "a changed build.gradle.kts must regenerate the lockfiles"
+
+[[ "$fails" -eq 0 ]] && echo "gradle-regen: OK (5 cases)"
 exit "$fails"

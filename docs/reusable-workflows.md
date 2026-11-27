@@ -332,15 +332,24 @@ Inputs:
 
 Bumps the repository to a Platform release and opens a pull request with the diff: the Gradle and npm
 pins, the frontend canon, the reusable workflow references, the lockfiles and the dependency
-verification metadata. Schedule it in the caller; it starts the newest published `platform-bump` bin,
-which hands over to the bin of the target release (from that release's assets, checked against its
-`SHA256SUMS`), so the bump always runs the logic of the release it goes to, also in a repository without a
+verification metadata. Schedule it in the caller; it starts the `platform-bump` bin of the newest release from
+that release's assets, checked against its `SHA256SUMS` and its attestation from Platform's `release.yml`, and that
+bin hands over to the bin of the target release (verified the same way), so the bump always runs the logic of the release it goes to, also in a repository without a
 frontend. The pull request body opens with the impact report of `platform-bump --report`: what of the
 crossed releases affects this repository, what it does not use, and what needs action.
 
 - Permissions: `contents: write`, `pull-requests: write`, `packages: read`. Platform's commands run in a
   job that can only read; a second job applies the diff, pushes `platform-bump/v<version>` and opens the
-  pull request. A branch that already exists is left alone.
+  pull request. A branch with an open pull request is left alone; a branch without one (a failed or closed pull
+  request) is replaced. When the pull request cannot be created, the run deletes the branch again and fails, so the
+  next run retries. The body is cut to fit GitHub's limit, keeping the start of the impact report and the end of the
+  bump log, with a note saying what was cut.
+- The second job applies only what `platform-bump` changes: the pins, lockfiles and verification metadata, the
+  Gradle wrapper, the agent blocks and the files of its upgrade migrations. In workflow files only Platform
+  workflow references, `platform-ref:` and JDK version lines may change, `gradlew` only together with a new wrapper
+  version, and `gradle-wrapper.jar` only as the jar Gradle publishes for the old or the new wrapper version. Any
+  other change fails the run before anything is pushed; run `scripts/platform-bump.sh` locally then and review
+  the diff.
 - Secret `gpr_token` (optional): a classic PAT with `read:packages`, as for backend-ci.
 - Secret `bump_token` (optional): a classic PAT with the `repo` and `workflow` scopes. A pull request
   opened with the automatic `GITHUB_TOKEN` runs no CI, and that token may not push workflow changes, so

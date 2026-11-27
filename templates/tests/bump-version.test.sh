@@ -80,3 +80,36 @@ bash "$empty/scripts/bump-version.sh" db new-migration first > /dev/null
 
 echo 'OK: bump-version numbers new changesets after the highest existing prefix'
 )
+
+# --- missing-version ---
+# bump-version.sh backend przy gradle.properties bez `version=`: grep bez trafienia w $(...) pod set -euo pipefail nie
+# może zakończyć skryptu po cichu; skrypt ma powiedzieć, czego brakuje, i zakończyć się kodem 1.
+(
+canon="$(cd "$(dirname "$0")/.." && pwd)/bump-version.sh"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/app/scripts" "$tmp/app/backend"
+cp "$canon" "$tmp/app/scripts/bump-version.sh"
+printf 'org.gradle.caching=true\n' > "$tmp/app/backend/gradle.properties"
+rc=0
+bash "$tmp/app/scripts/bump-version.sh" backend patch > "$tmp/out" 2>&1 || rc=$?
+[[ $rc -eq 1 ]] || fail "a gradle.properties without version= must end with exit 1, got $rc"
+grep -qF "No 'version=' in" "$tmp/out" || fail "a gradle.properties without version= must say so: $(cat "$tmp/out")"
+echo 'OK: bump-version names the missing version= instead of exiting silently'
+)
+
+# --- english-changeset ---
+# Nowy changeset Liquibase, który bump-version.sh wpisuje do repo konsumenta, ma komentarz po angielsku.
+(
+canon="$(cd "$(dirname "$0")/.." && pwd)/bump-version.sh"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/app/scripts" "$tmp/app/backend/src/main/resources/db/changelog"
+cp "$canon" "$tmp/app/scripts/bump-version.sh"
+printf 'databaseChangeLog: []\n' > "$tmp/app/backend/src/main/resources/db/changelog/db.changelog-master.yaml"
+bash "$tmp/app/scripts/bump-version.sh" db new-migration orders > /dev/null
+changeset="$tmp/app/backend/src/main/resources/db/changelog/changes/0001-orders.yaml"
+grep -qx '      # TODO: add the operations (createTable/addColumn/sql...); migrations are forward-only.' "$changeset" \
+  || fail "the changeset comment must be English: $(cat "$changeset")"
+echo 'OK: bump-version writes an English changeset'
+)

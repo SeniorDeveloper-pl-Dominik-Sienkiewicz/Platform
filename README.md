@@ -118,7 +118,8 @@ flowchart LR
 ```
 
 In a repository without a frontend, the `scripts/platform-bump.sh` stub takes the bin from the GitHub Release
-assets instead of `frontend/node_modules`; `platform-bump.yml` always starts it with `npx` from GitHub Packages.
+assets instead of `frontend/node_modules`; `platform-bump.yml` always starts the bin of the newest release from its
+assets, checked against `SHA256SUMS` and its attestation.
 
 ## Consumers
 
@@ -237,7 +238,7 @@ sequenceDiagram
         R->>G: verify-bundle: build spring-app from the zip alone
     end
     Note over B,C: in the consumer, Mondays 06:00 UTC or workflow_dispatch
-    B->>P: npx @seniordeveloper-pl-dominik-sienkiewicz/versions@latest platform-bump
+    B->>G: newest release's bin, checked against SHA256SUMS and its attestation
     B->>P: newest release of the current MAJOR
     B->>G: notes of every release since the current pin
     opt the running bin is not the target release

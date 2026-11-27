@@ -4,8 +4,8 @@ name: Platform bump (reusable)
 # referencje reusable workflows, lockfile'y, verification-metadata) i otwiera PR z diffem. Caller planuje go
 # cronem; wywołanie i uprawnienia: docs/reusable-workflows.md.
 #
-# Bin idzie z NAJNOWSZEGO opublikowanego @seniordeveloper-pl-dominik-sienkiewicz/versions (npx), nie z node_modules repo: działa też
-# w repo bez frontendu (Touchstone) i zawsze z aktualną logiką bumpu.
+# Bin idzie z assetu NAJNOWSZEGO wydania w GitHub Releases (SHA256SUMS + atestacja), nie z node_modules repo ani
+# z niesprawdzonego tagu npm: działa też w repo bez frontendu (Touchstone) i zawsze z aktualną logiką bumpu.
 # Dwa joby: `bump` uruchamia kod zależności (npm, Gradle) z tokenem tylko do odczytu i oddaje diff jako patch;
 # `pull-request` z prawem zapisu nakłada patch, pushuje gałąź i otwiera PR, nie uruchamiając nic z repo.
 on:
@@ -87,13 +87,43 @@ jobs:
           GPR_TOKEN: ${{ secrets.gpr_token || secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.gpr_token || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.gpr_token || secrets.GITHUB_TOKEN }}
         run: |
-          set -o pipefail
+          # >>> start-bin
+          set -euo pipefail
           read -r -a version <<< "$VERSION"
-          # Najnowszy bin ustala cel i oddaje sterowanie binowi wydania docelowego (handoff, N-DX-4), więc logika
-          # pochodzi z celu także w repo bez frontendu; --report daje raport wpływu na to repo do opisu PR (N-REL-8).
-          npx --yes --package "@seniordeveloper-pl-dominik-sienkiewicz/versions@latest" -- platform-bump "${version[@]}" \
+          # Bin startowy = asset versions NAJNOWSZEGO wydania z GitHub Releases, sprawdzony sumą z SHA256SUMS i atestacją
+          # release.yml na tagu, zanim cokolwiek z niego ruszy; ten sam łańcuch co handoff binu. Bin ustala cel
+          # i oddaje sterowanie binowi wydania docelowego (handoff, N-DX-4, też zweryfikowany), więc logika pochodzi
+          # z celu także w repo bez frontendu; --report daje raport wpływu na to repo do opisu PR (N-REL-8).
+          owner=SeniorDeveloper-pl-Dominik-Sienkiewicz
+          releases="${PLATFORM_RELEASES_URL:-https://github.com/$owner/Platform/releases/download}"
+          proto="=https"
+          case "$releases" in file://*) proto="=file" ;; esac
+          start=$(gh api "repos/$owner/Platform/releases/latest" --jq .tag_name)
+          start=${start#v}
+          if [[ ! "$start" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::The newest Platform release has no X.Y.Z tag ($start), so there is no bin to start."
+            exit 1
+          fi
+          cli="$RUNNER_TEMP/platform-cli"
+          asset="seniordeveloper-pl-dominik-sienkiewicz-versions-$start.tgz"
+          mkdir -p "$cli"
+          curl -fsSL --proto "$proto" --proto-redir "$proto" "$releases/v$start/$asset" -o "$cli/$asset"
+          curl -fsSL --proto "$proto" --proto-redir "$proto" "$releases/v$start/SHA256SUMS" -o "$cli/SHA256SUMS"
+          expected=$(awk -v name="$asset" '$2 == name || $2 == "*" name { print $1 }' "$cli/SHA256SUMS")
+          actual=$( (sha256sum "$cli/$asset" 2>/dev/null || shasum -a 256 "$cli/$asset") | awk '{ print $1 }')
+          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+            echo "::error::The release asset $asset of Platform $start does not match its SHA256SUMS, so the bump does not start."
+            exit 1
+          fi
+          gh attestation verify "$cli/$asset" --repo "$owner/Platform" --source-ref "refs/tags/v$start" \
+            --signer-workflow "$owner/Platform/.github/workflows/release.yml" > /dev/null
+          tar -xzf "$cli/$asset" -C "$cli"
+          echo "==> Starting the platform-bump of Platform $start, verified against its SHA256SUMS and attestation"
+          bash "$cli/package/bin/platform-bump.sh" ${version[@]+"${version[@]}"} \
             --report="$RUNNER_TEMP/platform-bump-report.md" 2>&1 | tee "$RUNNER_TEMP/platform-bump.log"
+          # <<< start-bin
 
       - name: Save the diff as a patch
         run: |
@@ -127,7 +157,78 @@ jobs:
       - name: Apply the bump
         env:
           PATCH: ${{ runner.temp }}/platform-bump/bump.patch
-        run: if [ -s "$PATCH" ]; then git apply "$PATCH"; fi
+        run: |
+          # >>> apply-patch
+          # Patch pochodzi z joba, który uruchamia kod zależności (npm, Gradle), a ten job pushuje go PAT-em z prawem
+          # do workflowów. Przechodzi więc tylko to, co platform-bump może zmienić: piny, lockfile'e, metadane
+          # weryfikacji, wrapper Gradle, bloki agentów, pliki migracji; w workflowach wyłącznie referencje Platform
+          # i wersje JDK, a gradle-wrapper.jar tylko taki, jaki Gradle publikuje dla starej albo nowej wersji wrappera.
+          set -euo pipefail
+          [ -s "$PATCH" ] || exit 0
+          git apply --index "$PATCH"
+          files=()
+          while IFS= read -r -d '' file; do files+=("$file"); done < <(git diff --cached --name-only --no-renames -z)
+          changed() { local file; for file in "${files[@]}"; do [ "$file" = "$1" ] && return 0; done; return 1; }
+          problems=()
+          allowed() {
+            case "$1" in
+              settings.gradle.kts | backend/settings.gradle.kts | backend/settings-gradle.lockfile) ;;
+              gradle.properties | backend/gradle.properties | backend/*gradle.lockfile | backend/*verification-metadata.xml) ;;
+              frontend/package.json | frontend/package-lock.json | .npmrc | frontend/.npmrc) ;;
+              gradlew | gradlew.bat | gradle/wrapper/gradle-wrapper.properties | gradle/wrapper/gradle-wrapper.jar) ;;
+              backend/gradlew | backend/gradlew.bat | backend/gradle/wrapper/gradle-wrapper.properties | backend/gradle/wrapper/gradle-wrapper.jar) ;;
+              AGENTS.md | CLAUDE.md | backend/AGENTS.md | backend/CLAUDE.md | frontend/AGENTS.md | frontend/CLAUDE.md) ;;
+              Dockerfile | backend/Dockerfile | .sdkmanrc | backend/.sdkmanrc) ;;
+              .github/workflows/*.yml | .github/workflows/*.yaml) ;;
+              *) return 1 ;;
+            esac
+          }
+          q="'"
+          workflow_lines=(
+            "^[-+][[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*(DominikSienkiewicz|SeniorDeveloper-pl-Dominik-Sienkiewicz)/Platform/\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml@v[0-9]+(\.[0-9]+\.[0-9]+)?([[:space:]]+#.*)?$"
+            "^[-+][[:space:]]*platform-ref:[[:space:]]*[\"$q]?v[0-9]+(\.[0-9]+\.[0-9]+)?[\"$q]?[[:space:]]*$"
+            "^[-+][[:space:]]*(toolchain-)?java-version:[[:space:]]*[\"$q]?[0-9]+[\"$q]?[[:space:]]*$"
+          )
+          for file in "${files[@]}"; do
+            if ! allowed "$file"; then problems+=("$file is not a file platform-bump changes"); continue; fi
+            case "$file" in
+              .github/workflows/*)
+                while IFS= read -r line; do
+                  ok=false
+                  for pattern in "${workflow_lines[@]}"; do [[ "$line" =~ $pattern ]] && ok=true; done
+                  "$ok" || problems+=("$file changes a line that is not a Platform workflow reference: $line")
+                done < <(git diff --cached --no-renames -U0 -- "$file" | grep -E '^[-+]' | grep -vE '^(\+\+\+|---) (a/|b/|/dev/null)' || true)
+                ;;
+            esac
+          done
+          distributions="${GRADLE_DISTRIBUTIONS_URL:-https://services.gradle.org/distributions}"
+          proto="=https"
+          case "$distributions" in file://*) proto="=file" ;; esac
+          gradle_version() { sed -n -E 's#^distributionUrl=.*gradle-([0-9.]+)-(bin|all)\.zip.*#\1#p' | head -1; }
+          for dir in "" backend/; do
+            props="${dir}gradle/wrapper/gradle-wrapper.properties"
+            jar="${dir}gradle/wrapper/gradle-wrapper.jar"
+            if { changed "${dir}gradlew" || changed "${dir}gradlew.bat"; } && ! changed "$props"; then
+              problems+=("${dir}gradlew changes without a new Gradle version in $props")
+            fi
+            changed "$jar" || continue
+            actual=""
+            [ -f "$jar" ] && actual=$( (sha256sum "$jar" 2>/dev/null || shasum -a 256 "$jar") | awk '{ print $1 }')
+            matches=false
+            for version in "$([ -f "$props" ] && gradle_version < "$props")" "$(git show "HEAD:$props" 2>/dev/null | gradle_version)"; do
+              [ -n "$version" ] && [ -n "$actual" ] || continue
+              expected=$(curl -fsSL --proto "$proto" --proto-redir "$proto" "$distributions/gradle-$version-wrapper.jar.sha256" 2>/dev/null || true)
+              [ "$expected" = "$actual" ] && matches=true
+            done
+            "$matches" || problems+=("$jar is not the wrapper jar Gradle publishes for the old or the new wrapper version")
+          done
+          if [ "${#problems[@]}" -gt 0 ]; then
+            printf '::error::%s\n' "${problems[@]}"
+            echo "::error::The bump patch changes more than platform-bump may change, so nothing is pushed. Run scripts/platform-bump.sh locally and review the diff."
+            exit 1
+          fi
+          git reset -q
+          # <<< apply-patch
       - name: Open the bump pull request
         env:
           TARGET: ${{ needs.bump.outputs.target }}
@@ -154,32 +255,68 @@ jobs:
             exit 0
           fi
           branch="platform-bump/v$TARGET"
+          # Gałąź z otwartym PR-em czeka na merge. Gałąź bez niego (nieudane `gh pr create`, zamknięty PR) to sierota:
+          # ten przebieg ją zastępuje, bo inaczej każdy kolejny kończyłby się na zielono, nic nie robiąc.
+          replace=""
           if git_auth ls-remote --exit-code --heads origin "$branch" > /dev/null 2>&1; then
-            echo "::notice::$branch already exists; merge or close its pull request to bump again."
-            exit 0
+            open=$(GH_TOKEN="$PUSH_TOKEN" gh pr list --head "$branch" --state open --json number --jq length)
+            if [ "$open" != 0 ]; then
+              echo "::notice::$branch already has an open pull request; merge or close it to bump again."
+              exit 0
+            fi
+            echo "::warning::$branch exists without an open pull request, so this run replaces it."
+            replace="--force"
           fi
 
           git switch -q -c "$branch"
           git add -A
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -q -m "chore(platform): bump Platform to $TARGET"
-          git_auth push -q origin "$branch"
+          git_auth push -q ${replace:+"$replace"} origin "$branch"
 
+          # GitHub odrzuca treść PR-a powyżej 65 536 znaków. Budżet liczy bajty (znak UTF-8 to co najmniej bajt), raport
+          # dostaje początek, log koniec; cięcie zawsze z widoczną notą i bez połówki znaku wielobajtowego.
+          body="$RUNNER_TEMP/platform-bump-pr.md"
+          body_limit=60000
+          report_limit=40000
+          head_bytes() { python3 -c 'import sys; n = int(sys.argv[1]); sys.stdout.write(sys.stdin.buffer.read()[:max(n, 0)].decode("utf-8", "ignore"))' "$1"; }
+          tail_bytes() { python3 -c 'import sys; n = int(sys.argv[1]); data = sys.stdin.buffer.read(); sys.stdout.write(data[len(data) - n:].decode("utf-8", "ignore") if n > 0 else "")' "$1"; }
           {
             echo "Bumps Platform to $TARGET with \`platform-bump\`: the Gradle and npm pins, the frontend canon,"
             echo "the reusable workflow references, the lockfiles and the dependency verification metadata."
             if [ -n "$note" ]; then echo; echo "> $note"; fi
             echo
             # Raport wpływu (platform-bump --report): co z wydań dotyczy tego repo, czego tu nie ma, co wymaga akcji.
-            if [ -s "${BUMP_REPORT:-}" ]; then cat "$BUMP_REPORT"; echo; fi
+            if [ -s "${BUMP_REPORT:-}" ]; then
+              if [ "$(wc -c < "$BUMP_REPORT")" -gt "$report_limit" ]; then
+                head_bytes "$report_limit" < "$BUMP_REPORT"
+                echo
+                echo
+                echo "> The impact report is cut to fit GitHub's pull request size limit; the full report is in this run's platform-bump artifact."
+              else
+                cat "$BUMP_REPORT"
+              fi
+              echo
+            fi
             echo "Review the release notes and the consumer actions below before merging."
             echo
+          } > "$body"
+          log_limit=$((body_limit - $(wc -c < "$body") - 300))
+          {
+            if [ "$(wc -c < "$BUMP_LOG")" -gt "$log_limit" ]; then
+              echo "> The bump log is cut to fit GitHub's pull request size limit; its start is in the log of the Run platform-bump job."
+              echo
+            fi
             echo '```text'
-            tail -c 60000 "$BUMP_LOG"
+            tail_bytes "$log_limit" < "$BUMP_LOG"
             echo '```'
-          } > "$RUNNER_TEMP/platform-bump-pr.md"
-          GH_TOKEN="$PUSH_TOKEN" gh pr create --base "$BASE" --head "$branch" \
-            --title "chore(platform): bump Platform to $TARGET" --body-file "$RUNNER_TEMP/platform-bump-pr.md"
+          } >> "$body"
+          if ! GH_TOKEN="$PUSH_TOKEN" gh pr create --base "$BASE" --head "$branch" \
+            --title "chore(platform): bump Platform to $TARGET" --body-file "$body"; then
+            git_auth push -q origin --delete "$branch" || true
+            echo "::error::The pull request for $branch could not be created, so the branch was deleted again and the next run retries."
+            exit 1
+          fi
           if [ -z "${BUMP_TOKEN:-}" ]; then
             echo "::warning::The pull request was opened with GITHUB_TOKEN, so its CI does not start. Add a bump_token secret to run it."
           fi
