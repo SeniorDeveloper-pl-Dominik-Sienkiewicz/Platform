@@ -12,7 +12,7 @@ Five product repositories consume Platform. Each pins one release in two places 
 the settings plugin and the version catalog. The settings plugin
 ([`seniordev.settings-conventions`](../gradle/build-logic/src/main/kotlin/seniordev.settings-conventions.settings.gradle.kts))
 adds the repositories in a fixed order (an explicit `-PplatformRepository` first, then Maven Central, then
-GitHub Packages) and refuses a Gradle older than the one TestKit proves. The catalog
+GitHub Packages; the `pl.seniordeveloper` groups come only from the first and the last) and refuses a Gradle older than the one TestKit proves. The catalog
 ([`libs.versions.toml`](../gradle/catalog/libs.versions.toml)) is the only place the version of a frame library
 is written. Guard: `platform-doctor` (PD020) and the pin rewrite of `platform-bump` keep the two pins equal;
 [versions.md](versions.md) explains why a catalog and not a BOM.
