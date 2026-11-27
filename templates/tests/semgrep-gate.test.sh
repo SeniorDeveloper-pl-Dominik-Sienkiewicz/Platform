@@ -78,4 +78,13 @@ grep -qF 'Semgrep: no findings; 0 blocking' "$tmp/out" || fail 'a clean scan mus
 if gate '' 2; then fail 'a scan without a result must fail'; fi
 grep -qF 'Semgrep produced no result (rc=2)' "$tmp/out" || fail 'a scan without a result must say why it failed'
 
+# Semgrep zapisuje JSON (np. {"results":[],"errors":[...]}) także wtedy, gdy nie wczyta reguł — rc>=2 failuje zawsze.
+jq -n '{results: [], errors: [{level: "error", message: "Failed to download configuration"}]}' > "$tmp/error.json"
+for rc in 2 7; do
+  if gate "$tmp/error.json" "$rc"; then fail "a scanner error (rc=$rc) with a JSON result must fail the gate"; fi
+  grep -qF "::error title=PLAT-SAST-001::[PLAT-SAST-001] Semgrep failed (rc=$rc)" "$tmp/out" \
+    || fail "a scanner error (rc=$rc) must be reported as PLAT-SAST-001"
+  if grep -qF '0 blocking' "$tmp/out"; then fail "a scanner error (rc=$rc) must not be summarised as a clean scan"; fi
+done
+
 echo 'OK: semgrep.yml blocks CRITICAL, HIGH and ERROR findings and counts every severity'

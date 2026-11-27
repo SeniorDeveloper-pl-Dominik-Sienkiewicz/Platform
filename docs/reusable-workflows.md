@@ -271,7 +271,7 @@ Inputs:
 ## semgrep.yml
 
 Static analysis of the source code. CRITICAL, HIGH and ERROR findings fail the run, and the log counts every
-severity; accepting a finding is described in [security-scanning.md](security-scanning.md). Platform runs the
+severity; a scanner error (exit code 2 or more) also fails it, even when Semgrep wrote a result; accepting a finding is described in [security-scanning.md](security-scanning.md). Platform runs the
 default rulesets on itself from
 `self-scan.yml`, pull requests included.
 

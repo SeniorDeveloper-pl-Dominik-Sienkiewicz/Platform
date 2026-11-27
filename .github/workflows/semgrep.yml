@@ -60,11 +60,17 @@ jobs:
           for c in $SEMGREP_CONFIGS; do args+=(--config "$c"); done
 
           # Pojedynczy skan: wszystkie severity naraz -> JSON. rc=1 (są znaleziska) jest OK,
-          # rc>=2 to realny błąd skanera (brak/niepełny JSON) -> przerywamy.
+          # rc>=2 to realny błąd skanera -> przerywamy zawsze, także gdy Semgrep zapisał JSON
+          # (np. {"results":[],"errors":[...]} po nieudanym pobraniu reguł), bo pusty wynik nie znaczy czystego skanu.
           semgrep scan "${args[@]}" --json --output semgrep.json --quiet
           rc=$?
           if [ ! -s semgrep.json ]; then
             echo "::error::Semgrep produced no result (rc=$rc), so the scan failed." >&2
+            exit 1
+          fi
+          if [ "$rc" -ge 2 ]; then
+            jq -r '.errors[]? | "\(.level // "error"): \(.message // . | tostring)"' semgrep.json >&2 || true
+            echo "::error title=PLAT-SAST-001::[PLAT-SAST-001] Semgrep failed (rc=$rc), so its result does not prove a clean scan; see the scanner errors above."
             exit 1
           fi
 
