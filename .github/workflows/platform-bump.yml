@@ -4,8 +4,8 @@ name: Platform bump (reusable)
 # referencje reusable workflows, lockfile'y, verification-metadata) i otwiera PR z diffem. Caller planuje go
 # cronem; wywołanie i uprawnienia: docs/reusable-workflows.md.
 #
-# Bin idzie z NAJNOWSZEGO opublikowanego @seniordeveloper-pl-dominik-sienkiewicz/versions (npx), nie z node_modules repo: działa też
-# w repo bez frontendu (Touchstone) i zawsze z aktualną logiką bumpu.
+# Bin idzie z assetu NAJNOWSZEGO wydania w GitHub Releases (SHA256SUMS + atestacja), nie z node_modules repo ani
+# z niesprawdzonego tagu npm: działa też w repo bez frontendu (Touchstone) i zawsze z aktualną logiką bumpu.
 # Dwa joby: `bump` uruchamia kod zależności (npm, Gradle) z tokenem tylko do odczytu i oddaje diff jako patch;
 # `pull-request` z prawem zapisu nakłada patch, pushuje gałąź i otwiera PR, nie uruchamiając nic z repo.
 on:
@@ -87,13 +87,43 @@ jobs:
           GPR_TOKEN: ${{ secrets.gpr_token || secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.gpr_token || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.gpr_token || secrets.GITHUB_TOKEN }}
         run: |
-          set -o pipefail
+          # >>> start-bin
+          set -euo pipefail
           read -r -a version <<< "$VERSION"
-          # Najnowszy bin ustala cel i oddaje sterowanie binowi wydania docelowego (handoff, N-DX-4), więc logika
-          # pochodzi z celu także w repo bez frontendu; --report daje raport wpływu na to repo do opisu PR (N-REL-8).
-          npx --yes --package "@seniordeveloper-pl-dominik-sienkiewicz/versions@latest" -- platform-bump "${version[@]}" \
+          # Bin startowy = asset versions NAJNOWSZEGO wydania z GitHub Releases, sprawdzony sumą z SHA256SUMS i atestacją
+          # release.yml na tagu, zanim cokolwiek z niego ruszy; ten sam łańcuch co handoff binu. Bin ustala cel
+          # i oddaje sterowanie binowi wydania docelowego (handoff, N-DX-4, też zweryfikowany), więc logika pochodzi
+          # z celu także w repo bez frontendu; --report daje raport wpływu na to repo do opisu PR (N-REL-8).
+          owner=SeniorDeveloper-pl-Dominik-Sienkiewicz
+          releases="${PLATFORM_RELEASES_URL:-https://github.com/$owner/Platform/releases/download}"
+          proto="=https"
+          case "$releases" in file://*) proto="=file" ;; esac
+          start=$(gh api "repos/$owner/Platform/releases/latest" --jq .tag_name)
+          start=${start#v}
+          if [[ ! "$start" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::The newest Platform release has no X.Y.Z tag ($start), so there is no bin to start."
+            exit 1
+          fi
+          cli="$RUNNER_TEMP/platform-cli"
+          asset="seniordeveloper-pl-dominik-sienkiewicz-versions-$start.tgz"
+          mkdir -p "$cli"
+          curl -fsSL --proto "$proto" --proto-redir "$proto" "$releases/v$start/$asset" -o "$cli/$asset"
+          curl -fsSL --proto "$proto" --proto-redir "$proto" "$releases/v$start/SHA256SUMS" -o "$cli/SHA256SUMS"
+          expected=$(awk -v name="$asset" '$2 == name || $2 == "*" name { print $1 }' "$cli/SHA256SUMS")
+          actual=$( (sha256sum "$cli/$asset" 2>/dev/null || shasum -a 256 "$cli/$asset") | awk '{ print $1 }')
+          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+            echo "::error::The release asset $asset of Platform $start does not match its SHA256SUMS, so the bump does not start."
+            exit 1
+          fi
+          gh attestation verify "$cli/$asset" --repo "$owner/Platform" --source-ref "refs/tags/v$start" \
+            --signer-workflow "$owner/Platform/.github/workflows/release.yml" > /dev/null
+          tar -xzf "$cli/$asset" -C "$cli"
+          echo "==> Starting the platform-bump of Platform $start, verified against its SHA256SUMS and attestation"
+          bash "$cli/package/bin/platform-bump.sh" ${version[@]+"${version[@]}"} \
             --report="$RUNNER_TEMP/platform-bump-report.md" 2>&1 | tee "$RUNNER_TEMP/platform-bump.log"
+          # <<< start-bin
 
       - name: Save the diff as a patch
         run: |

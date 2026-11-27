@@ -278,3 +278,71 @@ attempt empty ":"
 [[ $RC -eq 0 ]] || fail "an empty patch is not an error (exit $RC)"
 echo 'OK: the bump patch is applied only within what platform-bump changes'
 )
+
+# --- start-bin ---
+# Krok „Run platform-bump” uruchamia tylko zweryfikowany bin: najnowsze wydanie z GitHub Releases, jego asset versions
+# sprawdzony sumą z SHA256SUMS i atestacją release.yml, a nie niesprawdzony tag npm @latest.
+(
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+OUT=""
+fail() { echo "FAIL: $*" >&2; echo "$OUT" >&2; exit 1; }
+workflow="$root/.github/workflows/platform-bump.yml"
+if grep -qE 'npx|versions@latest' "$workflow"; then fail 'the bump must not start the unverified npm tag @latest'; fi
+awk 'index($0, "# >>> start-bin") { inside = 1; next } index($0, "# <<< start-bin") { inside = 0 } inside' "$workflow" > "$tmp/start.sh"
+[[ -s "$tmp/start.sh" ]] || fail 'platform-bump.yml has no start-bin block between its markers'
+
+mkdir -p "$tmp/bin" "$tmp/releases/v2.3.0" "$tmp/package/package/bin"
+cat > "$tmp/bin/gh" <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GH_CALLS"
+case "$1 $2" in
+  "api repos/SeniorDeveloper-pl-Dominik-Sienkiewicz/Platform/releases/latest") echo v2.3.0 ;;
+  "attestation verify") [[ -z "${GH_ATTESTATION_FAILS:-}" ]] || { echo 'no matching attestation' >&2; exit 1; } ;;
+  *) exit 1 ;;
+esac
+GH
+chmod +x "$tmp/bin/gh"
+printf '{ "name": "versions", "version": "2.3.0" }\n' > "$tmp/package/package/package.json"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "$BIN_CALL"\necho "bump ran"\n' > "$tmp/package/package/bin/platform-bump.sh"
+asset=seniordeveloper-pl-dominik-sienkiewicz-versions-2.3.0.tgz
+tar -czf "$tmp/releases/v2.3.0/$asset" -C "$tmp/package" package
+sha() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | awk '{ print $1 }'; }
+printf '%s  %s\n' "$(sha "$tmp/releases/v2.3.0/$asset")" "$asset" > "$tmp/releases/v2.3.0/SHA256SUMS"
+
+run() {
+  local name=$1
+  mkdir -p "$tmp/$name"
+  : > "$tmp/gh-calls"
+  rm -f "$tmp/bin-call"
+  RC=0
+  OUT=$(cd "$tmp" && PATH="$tmp/bin:$PATH" GH_CALLS="$tmp/gh-calls" BIN_CALL="$tmp/bin-call" RUNNER_TEMP="$tmp/$name" \
+    PLATFORM_RELEASES_URL="file://$tmp/releases" VERSION="${VERSION:-}" GH_ATTESTATION_FAILS="${GH_ATTESTATION_FAILS:-}" \
+    bash "$tmp/start.sh" 2>&1) || RC=$?
+}
+
+# (a) the newest release's bin, checked against SHA256SUMS and its attestation, runs with --report
+run verified
+[[ $RC -eq 0 ]] || fail "a verified bin must run (exit $RC)"
+grep -qF "attestation verify $tmp/verified/platform-cli/$asset --repo SeniorDeveloper-pl-Dominik-Sienkiewicz/Platform --source-ref refs/tags/v2.3.0 --signer-workflow SeniorDeveloper-pl-Dominik-Sienkiewicz/Platform/.github/workflows/release.yml" "$tmp/gh-calls" \
+  || fail "the asset must be verified against Platform's release.yml at its tag: $(cat "$tmp/gh-calls")"
+grep -qx -- "--report=$tmp/verified/platform-bump-report.md" "$tmp/bin-call" || fail "the bin must run with --report only: $(cat "$tmp/bin-call" 2>/dev/null)"
+grep -qx 'bump ran' "$tmp/verified/platform-bump.log" || fail 'the bin output must reach the bump log'
+
+# (b) an explicit version goes to the bin, which hands over to that release itself
+VERSION=2.2.0 run explicit
+grep -qx -- "2.2.0 --report=$tmp/explicit/platform-bump-report.md" "$tmp/bin-call" || fail "the version input must reach the bin: $(cat "$tmp/bin-call" 2>/dev/null)"
+
+# (c) an attestation that does not verify: the bin never runs
+GH_ATTESTATION_FAILS=1 run unattested
+[[ $RC -ne 0 ]] || fail 'an asset without a valid attestation must stop the run'
+[[ ! -f "$tmp/bin-call" ]] || fail 'an unattested bin must not run'
+
+# (d) an asset that does not match SHA256SUMS: the bin never runs
+printf '%064d  %s\n' 0 "$asset" > "$tmp/releases/v2.3.0/SHA256SUMS"
+run mismatch
+[[ $RC -ne 0 ]] || fail 'an asset that does not match SHA256SUMS must stop the run'
+[[ ! -f "$tmp/bin-call" ]] || fail 'a bin that does not match SHA256SUMS must not run'
+grep -q '::error::.*SHA256SUMS' <<<"$OUT" || fail 'the mismatch must be reported as an error'
+echo 'OK: the bump starts only the verified bin of the newest release'
+)

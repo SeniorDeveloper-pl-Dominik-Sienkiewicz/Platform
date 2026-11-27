@@ -330,9 +330,9 @@ Inputs:
 
 Bumps the repository to a Platform release and opens a pull request with the diff: the Gradle and npm
 pins, the frontend canon, the reusable workflow references, the lockfiles and the dependency
-verification metadata. Schedule it in the caller; it starts the newest published `platform-bump` bin,
-which hands over to the bin of the target release (from that release's assets, checked against its
-`SHA256SUMS`), so the bump always runs the logic of the release it goes to, also in a repository without a
+verification metadata. Schedule it in the caller; it starts the `platform-bump` bin of the newest release from
+that release's assets, checked against its `SHA256SUMS` and its attestation from Platform's `release.yml`, and that
+bin hands over to the bin of the target release (verified the same way), so the bump always runs the logic of the release it goes to, also in a repository without a
 frontend. The pull request body opens with the impact report of `platform-bump --report`: what of the
 crossed releases affects this repository, what it does not use, and what needs action.
 
