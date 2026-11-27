@@ -5,7 +5,8 @@
  *   - foojay-resolver-convention (lokalny auto-provisioning JDK pod toolchain z java-conventions) — wersja z classpath
  *     build-logic (lustro gradle/catalog), znika hardkod wersji foojay w repo konsumentów
  *   - dependencyResolutionManagement.repositories: opcjonalne -PplatformRepository (pierwsze; jedyna droga do
- *     niewydanych zmian, ADR-0003), mavenCentral i GitHub Packages (gpr.user/gpr.key lub GITHUB_ACTOR/GITHUB_TOKEN)
+ *     niewydanych zmian, ADR-0003), mavenCentral i GitHub Packages (gpr.user/gpr.key lub GITHUB_ACTOR/GITHUB_TOKEN);
+ *     grupa pl.seniordeveloper wyłącznie z -PplatformRepository i GitHub Packages (exclusiveContent)
  *   - task `platformDoctor` na root projekcie (N-DX-1): piny, toolchain i coverageMinimum widziane przez Gradle'a
  *   - jedna linia, gdy wydanie Platform jest starsze niż okno wsparcia (N-REL-6, `platform.staleness.notice=false`)
  *
@@ -48,31 +49,43 @@ if (providers.gradleProperty("platform.staleness.notice").orNull?.trim() != "fal
 	}
 }
 
+// Współrzędne Platform (pl.seniordeveloper i podgrupy) wyłącznie z repozytoriów Platform: Central ani repozytorium
+// dopisane przez konsumenta nie podsuną ich kopii, a GitHub Packages z tokenem nie dostaje pytań o resztę świata.
+// Jawne -PplatformRepository (ADR-0003) zostaje pierwsze i serwuje tylko Platform.
 dependencyResolutionManagement {
 	repositories {
-		providers.gradleProperty("platformRepository").orNull?.let { repository ->
-			maven { url = uri(repository) }
-		}
-		mavenCentral()
-		maven {
-			name = "GitHubPackages"
-			url = uri("https://maven.pkg.github.com/seniordeveloper-pl-dominik-sienkiewicz/Platform")
-			// Pusta albo z samych spacji wartość liczy się jak brak, jak w preflighcie starterów (N-DX-18): puste gpr.*
-			// nie zasłania GITHUB_ACTOR/GITHUB_TOKEN.
-			credentials {
-				username =
-					providers
-						.gradleProperty("gpr.user")
-						.filter { it.isNotBlank() }
-						.orElse(providers.environmentVariable("GITHUB_ACTOR").filter { it.isNotBlank() })
-						.orNull
-				password =
-					providers
-						.gradleProperty("gpr.key")
-						.filter { it.isNotBlank() }
-						.orElse(providers.environmentVariable("GITHUB_TOKEN").filter { it.isNotBlank() })
-						.orNull
+		val local =
+			providers.gradleProperty("platformRepository").orNull?.let { repository ->
+				maven {
+					name = "PlatformRepository"
+					url = uri(repository)
+				}
 			}
+		mavenCentral()
+		val gitHubPackages =
+			maven {
+				name = "GitHubPackages"
+				url = uri("https://maven.pkg.github.com/seniordeveloper-pl-dominik-sienkiewicz/Platform")
+				// Pusta albo z samych spacji wartość liczy się jak brak, jak w preflighcie starterów (N-DX-18): puste gpr.*
+				// nie zasłania GITHUB_ACTOR/GITHUB_TOKEN.
+				credentials {
+					username =
+						providers
+							.gradleProperty("gpr.user")
+							.filter { it.isNotBlank() }
+							.orElse(providers.environmentVariable("GITHUB_ACTOR").filter { it.isNotBlank() })
+							.orNull
+					password =
+						providers
+							.gradleProperty("gpr.key")
+							.filter { it.isNotBlank() }
+							.orElse(providers.environmentVariable("GITHUB_TOKEN").filter { it.isNotBlank() })
+							.orNull
+				}
+			}
+		exclusiveContent {
+			forRepositories(*listOfNotNull(local, gitHubPackages).toTypedArray())
+			filter { includeGroupByRegex("""pl\.seniordeveloper(\..+)?""") }
 		}
 	}
 }

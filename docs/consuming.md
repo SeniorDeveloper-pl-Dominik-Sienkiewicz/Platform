@@ -294,6 +294,12 @@ that repository first. Without the property, resolution uses Maven Central, the 
 Portal and GitHub Packages, with the credentials from [Prerequisites](#prerequisites). An
 authenticated remote lookup may still occur when an artifact is missing locally.
 
+For ordinary dependencies, the settings plugin serves the `pl.seniordeveloper` groups only from
+`-PplatformRepository` and GitHub Packages (Gradle `exclusiveContent`). Maven Central, or a repository the
+consumer adds, can never supply a copy of a Platform artifact, and GitHub Packages, with your token, is asked
+for nothing else. `-PplatformRepository` serves only Platform artifacts too, so a local `~/.m2` passed there
+does not stand in for Maven Central.
+
 ## Database migrations
 
 Schemas move forward only: a released changeset or migration is never edited, a change is a new file.

@@ -18,7 +18,7 @@ internal object CheckstyleAudit {
 		listOf("checkstyle.xml", "checkstyle-suppressions.xml").forEach { name ->
 			val resource =
 				checkNotNull(javaClass.classLoader.getResourceAsStream("platform-checkstyle/$name")) {
-					"Brak zasobu platform-checkstyle/$name na classpath testu"
+					"The test classpath has no platform-checkstyle/$name resource"
 				}
 			resource.use { File(configDir, name).writeBytes(it.readBytes()) }
 		}

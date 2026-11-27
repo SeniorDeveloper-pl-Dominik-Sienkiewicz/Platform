@@ -94,10 +94,14 @@ the build passes. A canon BOM at another version still fails PLAT-DEP-002.
 
 ### PLAT-QUA-001
 
-**Cause:** a test tagged `quarantine` (`@Tag("quarantine")` or `PlatformTestTags.QUARANTINE`) has no
-`// quarantine: <issue-url> until YYYY-MM-DD` comment in the three lines above the tag
-(`platformQuarantineCheck`).
-**Example:** `@Tag("quarantine")` with only `// flaky on CI` above it.
+**Cause:** a test tagged `quarantine` has no `// quarantine: <issue-url> until YYYY-MM-DD` comment in the three
+lines above the tag (`platformQuarantineCheck`). The check recognizes `@Tag("quarantine")`, `@Tag(value = "quarantine")`,
+any constant named `QUARANTINE` (`PlatformTestTags.QUARANTINE`, or `QUARANTINE` after a static import), the same
+inside `@Tags({...})`, and each use of an annotation declared in the scanned test sources that carries the tag,
+directly or through another such annotation. The comment goes above each use; the annotation declaration needs none.
+The check reads source text, so it cannot see a constant with another name and the same value, or a meta-annotation
+that comes from a library. Use one of the recognized forms.
+**Example:** `@Tag(QUARANTINE)` with only `// flaky on CI` above it.
 **Fix:** open an issue, then write `// quarantine: https://github.com/<owner>/<repo>/issues/<n> until 2026-11-30`
 right above the tag. A quarantined test runs only in `quarantineTest`, outside `check`.
 
@@ -145,10 +149,12 @@ an image (`security-scan.yml`, `container-scan.yml`).
 
 ### PLAT-PROV-001
 
-**Cause:** with `verify-provenance: true`, `backend-ci.yml` found a Platform jar in the Gradle cache without an
-artifact attestation from Platform's `release.yml`, or found no Platform jar at all (N-REL-16).
-**Fix:** a jar of a release older than 1.6.0 has no attestation: bump Platform. Otherwise the jar did not come
-from a Platform release; resolve it again from GitHub Packages, and report it if it still fails.
+**Cause:** with `verify-provenance: true`, `backend-ci.yml` found a Platform file in the Gradle cache without an
+artifact attestation from Platform's `release.yml`, or found no Platform jar at all (N-REL-16). It checks every
+jar and catalog TOML, and the `.pom` and `.module` metadata of releases from 2.1.1 on, so a substituted
+`platform-bom` or catalog fails too. Metadata of 2.1.0 and older carries no attestation and is not checked.
+**Fix:** a jar or catalog of a release older than 1.6.0 has no attestation: bump Platform. Otherwise the file did
+not come from a Platform release; resolve it again from GitHub Packages, and report it if it still fails.
 
 ### PLAT-RED-001
 

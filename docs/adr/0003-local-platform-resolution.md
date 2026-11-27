@@ -43,3 +43,10 @@ Platform change on a consumer.
 ## Revisit when
 
 - Platform moves off GitHub Packages, or consumers adopt composite builds for local work.
+
+## Update 2026-11-27
+
+`seniordev.settings-conventions` routes the `pl.seniordeveloper` groups exclusively to `-PplatformRepository`
+(when set) and GitHub Packages, with Gradle `exclusiveContent`. The local repository still comes first for
+Platform artifacts, but it no longer serves anything else, and no other repository can serve a Platform
+coordinate. Plugin resolution in the consumer's `pluginManagement` is unchanged.

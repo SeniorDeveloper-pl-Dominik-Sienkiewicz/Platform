@@ -90,7 +90,7 @@ tasks.withType<CyclonedxDirectTask>().configureEach {
 val spotbugsExclude =
 	(
 		object {}.javaClass.classLoader.getResourceAsStream("platform-spotbugs/spotbugs-exclude.xml")
-			?: error("Brak zasobu platform-spotbugs/spotbugs-exclude.xml w pluginie seniordev.quality-conventions")
+			?: error("The seniordev.quality-conventions plugin has no platform-spotbugs/spotbugs-exclude.xml resource")
 	).bufferedReader()
 		.use { it.readText() }
 // Lokalne kopie w bloku register, jak w extractCheckstyleConfig (configuration cache; PlatformTaskActionCaptureTest).

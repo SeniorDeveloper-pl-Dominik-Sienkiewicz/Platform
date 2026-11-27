@@ -73,6 +73,35 @@ class PlatformTestTaxonomyFunctionalTest {
 	}
 
 	@Test
+	fun `a statically imported quarantine constant needs an issue and a date too`() {
+		val consumer = ConsumerFixture(directory, "java-library")
+		consumer.file("src/test/java/example/library/TestTags.java").writeText(
+			"package example.library;\n\nfinal class TestTags {\n  static final String QUARANTINE = \"quarantine\";\n\n  private TestTags() {}\n}\n",
+		)
+		consumer.file("src/test/java/example/library/FlakyTest.java").writeText(
+			"""
+			package example.library;
+
+			import static example.library.TestTags.QUARANTINE;
+
+			import org.junit.jupiter.api.Tag;
+			import org.junit.jupiter.api.Test;
+
+			class FlakyTest {
+			  @Tag(QUARANTINE)
+			  @Test
+			  void failsUntilFixed() {}
+			}
+			""".trimIndent() + "\n",
+		)
+
+		val untracked = consumer.runner("platformQuarantineCheck").buildAndFail()
+
+		assertTrue(untracked.output.contains("[PLAT-QUA-001]"), "a static-import quarantine without a deadline must fail")
+		assertTrue(untracked.output.contains("FlakyTest.java:9"), "the message must name the tag line:\n${untracked.output}")
+	}
+
+	@Test
 	fun `retry detection keeps a test that passed on retry red`() {
 		val consumer = ConsumerFixture(directory, "java-library")
 		consumer.file("src/test/java/example/library/RetriedTest.java").writeText(

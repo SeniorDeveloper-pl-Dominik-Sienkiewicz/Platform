@@ -87,7 +87,7 @@ val generatePlatformVersions =
 				}
 			file.writeText(
 				listOf(
-					"// Wygenerowane z gradle/catalog/libs.versions.toml przez :generatePlatformVersions. Nie edytuj.",
+					"// Generated from gradle/catalog/libs.versions.toml by :generatePlatformVersions. Do not edit.",
 					"package pl.seniordeveloper.gradle",
 					"",
 					"internal object PlatformVersions {",

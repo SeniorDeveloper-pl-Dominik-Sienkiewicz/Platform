@@ -131,15 +131,19 @@ jobs:
               exit 1
             fi
           done
-      # Te same pliki, które Gradle właśnie wgrał (jary z build/libs, wygenerowany TOML katalogu). Moduł pominięty
-      # jako już opublikowany nie zostawia plików, więc re-run po sukcesie niczego nie atestuje drugi raz.
+      # Te same pliki, które Gradle właśnie wgrał (jary z build/libs, wygenerowany TOML katalogu, POM-y i metadane
+      # Gradle'a każdej publikacji — platform-bom ma tylko je). Gradle wgrywa pom-default.xml i module.json bajt
+      # w bajt jako .pom i .module, więc digest atestacji = digest w rejestrze; backend-ci weryfikuje je od 2.1.1.
+      # Moduł pominięty jako już opublikowany nie zostawia plików, więc re-run po sukcesie niczego nie atestuje drugi raz.
       - name: Attest the provenance of the published files
-        if: hashFiles('gradle/*/build/libs/*.jar', 'gradle/catalog/build/version-catalog/*.toml') != ''
+        if: hashFiles('gradle/*/build/libs/*.jar', 'gradle/catalog/build/version-catalog/*.toml', 'gradle/*/build/publications/*/pom-default.xml') != ''
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             gradle/*/build/libs/*.jar
             gradle/catalog/build/version-catalog/*.toml
+            gradle/*/build/publications/*/pom-default.xml
+            gradle/*/build/publications/*/module.json
 
   # Job z packages: write nie uruchamia żadnego builda.
   npm:
@@ -217,7 +221,7 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: frontend/dist/*.tgz
-      - name: Publish (idempotentny)
+      - name: Publish (idempotent)
         run: |
           # >>> npm-publish
           set +e

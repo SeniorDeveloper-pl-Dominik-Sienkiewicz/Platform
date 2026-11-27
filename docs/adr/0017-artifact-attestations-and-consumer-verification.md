@@ -26,3 +26,13 @@ mistaken manual publish could put bytes into the registry that no workflow built
 ## Revisit when
 
 GitHub Packages offers signature verification of its own.
+
+## Update 2026-11-27
+
+The jars were not the whole release: the catalog TOML was attested but never verified, and `platform-bom`, which
+publishes only a POM and Gradle module metadata, was neither. A substituted registry could lower the CVE floors or
+point an alias elsewhere while the gate stayed green. `release.yml` now also attests the POM and module metadata of
+every publication (`build/publications/*/pom-default.xml` and `module.json`, the bytes Gradle uploads), and
+`backend-ci.yml` verifies every jar and catalog TOML, and the `.pom` and `.module` files of releases from 2.1.1 on.
+Releases up to 2.1.0 attested no metadata, so their metadata is skipped rather than failed; consumers pinned to
+them keep a green gate.

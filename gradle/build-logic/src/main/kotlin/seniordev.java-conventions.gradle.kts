@@ -113,7 +113,7 @@ val checkstyleFiles =
 	listOf("checkstyle.xml", "checkstyle-suppressions.xml").associateWith { name ->
 		(
 			object {}.javaClass.classLoader.getResourceAsStream("platform-checkstyle/$name")
-				?: error("Brak zasobu platform-checkstyle/$name w pluginie seniordev.java-conventions")
+				?: error("The seniordev.java-conventions plugin has no platform-checkstyle/$name resource")
 		).bufferedReader()
 			.use { it.readText() }
 	}
@@ -412,7 +412,7 @@ fun isGovernedBucket(name: String): Boolean =
 val platformCanon =
 	(
 		object {}.javaClass.classLoader.getResourceAsStream("platform-canon.tsv")
-			?: error("Brak zasobu platform-canon.tsv w pluginie seniordev.java-conventions")
+			?: error("The seniordev.java-conventions plugin has no platform-canon.tsv resource")
 	).bufferedReader()
 		.use { DependencyGovernance.parseCanon(it.readText()) }
 

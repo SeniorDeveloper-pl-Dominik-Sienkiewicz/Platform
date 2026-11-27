@@ -44,7 +44,7 @@ abstract class PlatformQuarantineCheck : DefaultTask() {
 		sources.asFileTree.visit {
 			if (!isDirectory && (name.endsWith(".java") || name.endsWith(".kt"))) testSources += relativePath.pathString to file
 		}
-		val entries = testSources.sortedBy { it.first }.flatMap { (path, file) -> QuarantineRules.scan(path, file.readText()) }
+		val entries = QuarantineRules.scan(testSources.sortedBy { it.first }.map { (path, file) -> path to file.readText() })
 		val now = today.orNull?.let(LocalDate::parse) ?: LocalDate.now()
 		val missing = QuarantineRules.missing(entries)
 		val expired = QuarantineRules.expired(entries, now)
