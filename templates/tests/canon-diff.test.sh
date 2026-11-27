@@ -86,4 +86,38 @@ grep -qF -- '- frontend canon `postcss` removed: the consumer owns its version f
 grep -qx 'None.' "$tmp/report" || fail 'a canon removal alone needs no consumer action'
 grep -qx 'consumer_action=false' "$tmp/canon.out" || fail 'a canon removal alone must not label the pull request'
 
+# Sekret wymagany (nowy albo z false na true), zmiana typu wejścia i ruch toolchainu `java` to akcja (ADR-0002, pkt 4).
+secrets_before='backend-ci.yml input timeout-minutes type=number default=30
+backend-ci.yml secret gpr_token required=false
+backend-ci.yml secret snyk_token required=true'
+secrets_after='backend-ci.yml input timeout-minutes type=string default=30
+backend-ci.yml secret gpr_token required=true
+backend-ci.yml secret snyk_token required=false
+backend-ci.yml secret sonar_token required=true
+backend-ci.yml secret extra_token required=false'
+write secrets-before 4.1.1 '' 16.2.6 '' "$secrets_before" space
+sed -i.bak 's/^\[versions\]$/[versions]\njava = "27"/' "$repo/gradle/catalog/libs.versions.toml" && rm -f "$repo/gradle/catalog/libs.versions.toml.bak"
+git -C "$repo" commit -q -am 'java 27'
+secrets_base=$(git -C "$repo" rev-parse HEAD)
+write secrets-after 4.1.1 '' 16.2.6 '' "$secrets_after" space
+sed -i.bak 's/^\[versions\]$/[versions]\njava = "28"/' "$repo/gradle/catalog/libs.versions.toml" && rm -f "$repo/gradle/catalog/libs.versions.toml.bak"
+git -C "$repo" commit -q -am 'java 28'
+(cd "$repo" && python3 "$root/scripts/canon-diff.py" "$secrets_base" HEAD --github-output "$tmp/secrets.out") > "$tmp/report"
+for expected in \
+  '- catalog `libs.versions.java`: 27 → 28' \
+  '- `backend-ci.yml` input `timeout-minutes`: type=number → type=string' \
+  '- `backend-ci.yml` secret `gpr_token` became required' \
+  '- `backend-ci.yml` secret `snyk_token` is no longer required' \
+  '- `backend-ci.yml` secret `sonar_token` added (required)' \
+  '- `backend-ci.yml` secret `extra_token` added' \
+  '- the toolchain moves to Java 28: run CI and the final Dockerfile `FROM` on Java 28, or `platformRuntimeImageCheck` fails (PLAT-IMG-001)' \
+  '- a caller of `backend-ci.yml` that passes `timeout-minutes` must pass a string' \
+  '- every caller of `backend-ci.yml` must pass the secret `gpr_token`, which is now required' \
+  '- every caller of `backend-ci.yml` must pass the new required secret `sonar_token`'; do
+  grep -qxF -- "$expected" "$tmp/report" || fail "missing line: $expected"
+done
+actions=$(awk '/^### Consumer action required$/ { inside = 1; next } inside && /^- /' "$tmp/report")
+if grep -qF -e 'snyk_token' -e 'extra_token' <<<"$actions"; then fail 'an optional secret is not a consumer action'; fi
+grep -qx 'consumer_action=true' "$tmp/secrets.out" || fail 'a required secret, a type change and a toolchain move label the pull request'
+
 echo 'OK: canon-diff compares parsed values and flags the changes that need consumer action'

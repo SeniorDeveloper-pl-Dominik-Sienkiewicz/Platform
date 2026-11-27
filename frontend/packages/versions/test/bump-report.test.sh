@@ -44,7 +44,7 @@ cat > "$tmp/new.json" <<'JSON'
   "companions": { "typescript":"typescript-native", "vitest":"vite" } }
 JSON
 printf 'backend-ci.yml input gradle-task type=string default="build"\nsonar.yml input token type=string default=""\n' > "$tmp/old.txt"
-printf 'backend-ci.yml input gradle-task type=string default="build"\nbackend-ci.yml input region type=string required=true\nsonar.yml input token type=string default=""\nsonar.yml input host type=string required=true\n' > "$tmp/new.txt"
+printf 'backend-ci.yml input gradle-task type=string default="build"\nbackend-ci.yml input region type=string required=true\nbackend-ci.yml secret gpr_token required=true\nsonar.yml input token type=string default=""\nsonar.yml input host type=string required=true\n' > "$tmp/new.txt"
 
 repo="$tmp/repo"
 mkdir -p "$repo/backend" "$repo/frontend" "$repo/.github/workflows"
@@ -85,6 +85,9 @@ done
 grep -qF '`sonar.yml` input `host` added (required)' <<<"$unused" || fail 'a workflow the repo does not call goes to Not used here'
 grep -qF 'every caller of `backend-ci.yml` must pass the new required input `region`' <<<"$actions" || fail 'a used breaking change is an action'
 grep -qF 'sonar.yml' <<<"$actions" && fail 'an action of an unused workflow is not this repo'"'"'s action'
+grep -qF 'the toolchain moves to Java 28' <<<"$actions" || fail 'a toolchain move is a consumer action'
+grep -qF 'every caller of `backend-ci.yml` must pass the new required secret `gpr_token`' <<<"$actions" \
+  || fail 'a new required secret of a called workflow is an action'
 
 FALLBACK=$(PLATFORM_TOML_FALLBACK=1 report)
 [[ "$FALLBACK" == "$OUT" ]] || { OUT=$FALLBACK; fail 'the fallback TOML reader must give the same report'; }

@@ -3,8 +3,10 @@
 Woła go scripts/canon-diff.py (PR do Platform, dwie rewizje gita) i bump-report.py (konsument, dwa wydania).
 Porównuje katalog (libs.versions.toml), kanon frontendu (versions.json) i kontrakt callerów reusable workflowów
 (workflow-contract.txt). Akcja konsumenta (ADR-0002, MINOR w linii 1.x): usunięty alias katalogu, paczka
-usunięta z kanonu, a w kontrakcie usunięte wejście albo sekret, nowe wymagane wejście, nowe lub wyższe uprawnienie
-i zmieniona wartość domyślna. Zmiana wersji nią nie jest — platform-bump ją przenosi i regeneruje lockfile'y.
+usunięta z kanonu, ruch toolchainu `java` (CI i ostatni `FROM` Dockerfile'a, PLAT-IMG-001), a w kontrakcie usunięte
+wejście albo sekret, nowe wymagane wejście albo sekret, sekret, który stał się wymagany, zmieniony typ wejścia, nowe
+lub wyższe uprawnienie i zmieniona wartość domyślna. Inna zmiana wersji nią nie jest — platform-bump ją przenosi
+i regeneruje lockfile'y.
 """
 
 import json
@@ -172,7 +174,7 @@ def canon_from_text(text):
 
 
 def contract_from_text(text):
-    """{workflow: {"input": {name: (required, default)}, "secret": {name: required}, "permission": {scope: level}}}"""
+    """{workflow: {"input": {name: (required, default, type)}, "secret": {name: required}, "permission": {scope: level}}}"""
     workflows = {}
     for line in (text or "").splitlines():
         parts = line.split(" ")
@@ -181,7 +183,11 @@ def contract_from_text(text):
         workflow = workflows.setdefault(parts[0], {"input": {}, "secret": {}, "permission": {}})
         if parts[1] == "input":
             attributes = dict(part.split("=", 1) for part in parts[3:] if "=" in part)
-            workflow["input"][parts[2]] = (attributes.get("required") == "true", attributes.get("default"))
+            workflow["input"][parts[2]] = (
+                attributes.get("required") == "true",
+                attributes.get("default"),
+                attributes.get("type"),
+            )
         elif parts[1] == "secret":
             workflow["secret"][parts[2]] = "required=true" in parts[3:]
         elif parts[1] in ("permissions", "job"):
@@ -217,6 +223,16 @@ def _version_users(catalog, version_key):
     return users
 
 
+def _toolchain_action(section, key, after):
+    # Toolchain to akcja konsumenta (ADR-0002, pkt 4): platformRuntimeImageCheck failuje na starszym runtime.
+    if section != "versions" or key != "java":
+        return None
+    return (
+        f"the toolchain moves to Java {describe(after)}: run CI and the final Dockerfile `FROM` on Java {describe(after)}, "
+        "or `platformRuntimeImageCheck` fails (PLAT-IMG-001)"
+    )
+
+
 # --- Zmiany --------------------------------------------------------------------------------------------------
 
 
@@ -234,7 +250,8 @@ def catalog_changes(old, new):
                     Change("catalog", key, f"catalog `{name}` removed", f"a build that uses `{name}` no longer resolves it", users)
                 )
             elif before != after:
-                changes.append(Change("catalog", key, f"catalog `{name}`: {describe(before)} → {describe(after)}", aliases=users))
+                line = f"catalog `{name}`: {describe(before)} → {describe(after)}"
+                changes.append(Change("catalog", key, line, _toolchain_action(section, key, after), users))
     return changes
 
 
@@ -274,15 +291,33 @@ def contract_changes(old, new):
                 )
             elif now is None:
                 add(f"`{workflow}` input `{name}` removed", f"a caller of `{workflow}` that passes `{name}` fails")
-            elif was != now:
+            else:
+                if was[2] != now[2]:
+                    add(
+                        f"`{workflow}` input `{name}`: type={was[2]} → type={now[2]}",
+                        f"a caller of `{workflow}` that passes `{name}` must pass a {now[2]}",
+                    )
+                if was[:2] != now[:2]:
+                    add(
+                        f"`{workflow}` input `{name}`: required={was[0]} default={was[1]} → required={now[0]} default={now[1]}",
+                        f"`{workflow}` input `{name}` changed its default or became required",
+                    )
+        for name in sorted(set(before["secret"]) | set(after["secret"])):
+            was, now = before["secret"].get(name), after["secret"].get(name)
+            if now is None:
+                add(f"`{workflow}` secret `{name}` removed", f"a caller of `{workflow}` that passes the secret `{name}` fails")
+            elif was is None:
                 add(
-                    f"`{workflow}` input `{name}`: required={was[0]} default={was[1]} → required={now[0]} default={now[1]}",
-                    f"`{workflow}` input `{name}` changed its default or became required",
+                    f"`{workflow}` secret `{name}` added" + (" (required)" if now else ""),
+                    f"every caller of `{workflow}` must pass the new required secret `{name}`" if now else None,
                 )
-        for name in sorted(set(before["secret"]) - set(after["secret"])):
-            add(f"`{workflow}` secret `{name}` removed", f"a caller of `{workflow}` that passes the secret `{name}` fails")
-        for name in sorted(set(after["secret"]) - set(before["secret"])):
-            add(f"`{workflow}` secret `{name}` added")
+            elif now and not was:
+                add(
+                    f"`{workflow}` secret `{name}` became required",
+                    f"every caller of `{workflow}` must pass the secret `{name}`, which is now required",
+                )
+            elif was and not now:
+                add(f"`{workflow}` secret `{name}` is no longer required")
         for scope in sorted(set(before["permission"]) | set(after["permission"])):
             was, now = before["permission"].get(scope, 0), after["permission"].get(scope, 0)
             if now > was:
