@@ -76,7 +76,7 @@ done
 npm=$(job npm)
 pack=$(grep -n 'name: Pack the packages to publish' <<<"$npm" | cut -d: -f1)
 attest=$(grep -n 'uses: actions/attest@' <<<"$npm" | cut -d: -f1)
-publish=$(grep -n 'name: Publish (idempotentny)' <<<"$npm" | cut -d: -f1)
+publish=$(grep -n 'name: Publish (idempotent)' <<<"$npm" | cut -d: -f1)
 [[ "$pack" -lt "$attest" && "$attest" -lt "$publish" ]] || fail 'the npm job packs, attests, then publishes'
 
 echo 'OK: release.yml attests the files it publishes and publishes the attested npm tarballs'
