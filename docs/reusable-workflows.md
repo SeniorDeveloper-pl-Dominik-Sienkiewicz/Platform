@@ -416,7 +416,10 @@ with read-only package access, which the signing does not wait for.
   the Trivy step fails. Accept a finding in `.grype.yaml` and `.trivyignore.yaml`. The `sign` job
   then signs the same digests with cosign keyless. It has no checkout and runs no code of the
   repository, and it is the only job with `id-token: write`. An image that a gate rejects stays in
-  GHCR unsigned. The identity in the certificate, and how to verify it, are in
+  GHCR unsigned. The migration and `eval-worker` images are scanned the same way in a warn phase
+  ([ADR-0019](adr/0019-new-failure-modes-warn-first.md)): a finding warns with `PLAT-SCA-001 (warn phase)`
+  and leaves that image unsigned instead of failing the run, and an image that passes both scans is signed
+  with the others. A later MINOR makes these scans gates. The identity in the certificate, and how to verify it, are in
   [security-scanning.md](security-scanning.md#signed-images).
 - Secrets: `GPR_USER`, `GPR_KEY`, `NPM_GH_TOKEN` and optionally `SNYK_TOKEN`, passed by the caller.
   They are declared optional so that the `preflight` job, not GitHub, names the missing ones.

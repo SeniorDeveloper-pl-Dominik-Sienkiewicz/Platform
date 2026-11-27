@@ -141,7 +141,10 @@ failure, read the scanner errors the log prints above the annotation, and rerun 
 ### PLAT-SCA-001
 
 **Cause:** Grype found vulnerabilities at or above the severity cutoff in the SBOM, the frontend lockfile or
-an image (`security-scan.yml`, `container-scan.yml`).
+an image (`security-scan.yml`, `container-scan.yml`). In `deploy.yml` with `scan-images: true`, the annotation
+`PLAT-SCA-001 (warn phase)` is a warning for the migration or `eval-worker` image: Grype or Trivy found such a
+vulnerability, or its digest could not be resolved, so the image stays unsigned
+([ADR-0019](adr/0019-new-failure-modes-warn-first.md); a later MINOR fails the run instead).
 **Fix:** move to a fixed version; accept a finding without a fix only through `.grype.yaml`
 ([security-scanning.md](security-scanning.md)).
 

@@ -51,7 +51,7 @@ of a personal account.
   `sha256-<digest>.sig` tag. The cluster's policy must use a verifier that reads such bundles, such as Kyverno's
   `ImageValidatingPolicy` from 1.19.2.
 - The migration and `eval-worker` images are neither scanned nor signed. Only the SSH deploy uses them, and it
-  verifies no signature.
+  verifies no signature. (Amended 2026-11-27, below.)
 - `promote.yml` pins `deploy.yml` at a release commit, so promotions are signed only after that pin moves to a
   release with this change. Its callers then grant `id-token: write` as well.
 
@@ -61,3 +61,13 @@ The consumers become public, or move to a plan with artifact attestations in pri
 attestation would then sign the same digests without a public Rekor entry for a private repository.
 The record in the public logs becomes unacceptable for a consumer. Signing would then move to a key pair, or to
 GitHub attestations once the plan allows them.
+
+## Amended (2026-11-27)
+
+With the SSH deploy gone, a direct caller of `deploy.yml` with `scan-images: true` still pushed the migration and
+`eval-worker` images unscanned and unsigned. They now enter the same chain in a warn phase
+([ADR-0019](0019-new-failure-modes-warn-first.md)), because the documentation had excluded them from the gates:
+`build-push` resolves their digests, Grype and Trivy scan them with `scan-severity`, a finding or an unresolved
+digest leaves a `PLAT-SCA-001 (warn phase)` warning, and `sign` signs each of them only when both scans passed. A
+signature therefore keeps its meaning. A later MINOR makes these scans gates. `promote.yml` passes
+`has-migrate: false` and builds no worker, so promotion is not affected.

@@ -32,7 +32,12 @@ done
 grep -qF 'value: ${{ jobs.versions.outputs.backend }}' "$deploy" || fail 'backend-tag must come from jobs.versions.outputs.backend'
 grep -qF 'value: ${{ jobs.versions.outputs.frontend }}' "$deploy" || fail 'frontend-tag must come from jobs.versions.outputs.frontend'
 
-[[ "$(grep -cFx '          fail-build: true' "$deploy")" == 2 ]] || fail 'both Grype steps must keep fail-build: true: the scan is the gate of every promotion'
+# Bramki Grype (backend i frontend) failują run; kroki fazy ostrzeżenia (migracja, eval-worker) tylko ostrzegają (ADR-0019).
+for image in backend frontend; do
+  gate=$(awk -v name="      - name: Grype scan — $image (gate)" 'index($0, name) == 1 { p = 1; print; next } p && /^      - / { exit } p' "$deploy")
+  grep -qFx '          fail-build: true' <<< "$gate" || fail "the $image Grype gate must keep fail-build: true: the scan is the gate of every promotion"
+  grep -qF 'continue-on-error' <<< "$gate" && fail "the $image Grype gate must not continue on error"
+done
 grep -q 'fail-build: false' "$deploy" && fail 'no Grype step may set fail-build: false'
 
 # --- deploy.yml: preflight ---

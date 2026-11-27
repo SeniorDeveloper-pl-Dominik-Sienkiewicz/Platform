@@ -42,6 +42,10 @@ backend_digest="sha256:$(printf 'b%.0s' {1..64})"
 frontend_digest="sha256:$(printf 'f%.0s' {1..64})"
 backend="ghcr.io/owner/app-backend@$backend_digest"
 frontend="ghcr.io/owner/app-frontend@$frontend_digest"
+migrate_digest="sha256:$(printf 'a%.0s' {1..64})"
+worker_digest="sha256:$(printf 'e%.0s' {1..64})"
+migrate="ghcr.io/owner/app-migrate@$migrate_digest"
+worker="ghcr.io/owner/app-eval-worker@$worker_digest"
 
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/docker" <<'STUB'
@@ -51,6 +55,8 @@ cat > "$tmp/bin/docker" <<'STUB'
 case "$4" in
   ghcr.io/owner/app-backend:2.0.0) hex=b ;;
   ghcr.io/owner/app-frontend:3.0.0) hex=f ;;
+  ghcr.io/owner/app-migrate:2.0.0) hex=a ;;
+  ghcr.io/owner/app-eval-worker:2.0.0) hex=e ;;
   *) echo "no such manifest: $4" >&2; exit 1 ;;
 esac
 printf '{"mediaType":"application/vnd.oci.image.index.v1+json","digest":"sha256:%s","size":856}\n' "$(printf "$hex%.0s" {1..64})"
@@ -75,21 +81,35 @@ grep -qFx '        id: digests' <<< "$digests_step" || fail 'the digest step mus
 grep -qFx '        if: ${{ inputs.scan-images }}' <<< "$digests_step" || fail 'the digests are resolved exactly when the images are scanned'
 grep -qFx '          SINGLE_IMAGE: ${{ inputs.single-image }}' <<< "$digests_step" \
   || fail 'the digest step must pass inputs.single-image as SINGLE_IMAGE in its env:'
+for pass in '          HAS_MIGRATE: ${{ inputs.has-migrate }}' '          HAS_WORKER: ${{ inputs.has-worker }}' \
+  '          MIGRATE_IMAGE_SUFFIX: ${{ inputs.migrate-image-suffix }}'; do
+  grep -qFx -- "$pass" <<< "$digests_step" || fail "the digest step must pass in its env: $pass"
+done
 block image-digests > "$tmp/digests.sh"
 [[ -s "$tmp/digests.sh" ]] || fail 'deploy.yml has no image-digests block between its markers'
 digests() {
   : > "$tmp/github-output"
   (env PATH="$tmp/bin:$PATH" GITHUB_OUTPUT="$tmp/github-output" REGISTRY=ghcr.io OWNER=owner APP=app BACKEND_VER=2.0.0 \
-    FRONTEND_VER=3.0.0 "$@" bash "$tmp/digests.sh") > "$tmp/out" 2>&1 || return 1
+    FRONTEND_VER=3.0.0 MIGRATE_VER=2.0.0 MIGRATE_IMAGE_SUFFIX=migrate "$@" bash "$tmp/digests.sh") > "$tmp/out" 2>&1 || return 1
   paste -sd'|' - < "$tmp/github-output"
 }
 outputs=$(digests SINGLE_IMAGE=false) || fail 'the image-digests block must run for two images'
-[[ "$outputs" == "backend=$backend|frontend=$frontend|images=$backend $frontend|backend-digest=$backend_digest|frontend-digest=$frontend_digest" ]] \
+[[ "$outputs" == "backend=$backend|frontend=$frontend|images=$backend $frontend|backend-digest=$backend_digest|frontend-digest=$frontend_digest|migrate=|worker=|warn-images=" ]] \
   || fail "two images must resolve to the digest references and the digests of the backend and the frontend, got: $outputs"
 outputs=$(digests SINGLE_IMAGE=true FRONTEND_VER='') || fail 'the image-digests block must run for a single image'
-[[ "$outputs" == "backend=$backend|frontend=|images=$backend|backend-digest=$backend_digest|frontend-digest=" ]] \
+[[ "$outputs" == "backend=$backend|frontend=|images=$backend|backend-digest=$backend_digest|frontend-digest=|migrate=|worker=|warn-images=" ]] \
   || fail "a single image must resolve only the backend, got: $outputs"
 digests SINGLE_IMAGE=false BACKEND_VER=9.9.9 > /dev/null && fail 'a tag missing from GHCR must fail the digest step'
+
+# Obrazy migracji i eval-worker: skan i podpis w fazie ostrzeżenia (ADR-0019). Digest ustalany jak dla bramkowanych
+# obrazów, ale nie trafia do listy bramki, a brak obrazu w GHCR tylko ostrzega.
+outputs=$(digests SINGLE_IMAGE=false HAS_MIGRATE=true HAS_WORKER=true) || fail 'the image-digests block must run with the migrate and eval-worker images'
+[[ "$outputs" == "backend=$backend|frontend=$frontend|images=$backend $frontend|backend-digest=$backend_digest|frontend-digest=$frontend_digest|migrate=$migrate|worker=$worker|warn-images=$migrate $worker" ]] \
+  || fail "the migrate and eval-worker images must resolve to digest references outside the gated list, got: $outputs"
+outputs=$(digests SINGLE_IMAGE=false HAS_MIGRATE=true HAS_WORKER=true MIGRATE_VER=0007) \
+  || fail 'a migrate image missing from GHCR must not fail the digest step in the warn phase'
+[[ "$outputs" == *"|migrate=|worker=$worker|warn-images=$worker" ]] || fail "a migrate image missing from GHCR is left out, got: $outputs"
+grep -qF '::warning title=PLAT-SCA-001 (warn phase)::' "$tmp/out" || fail 'a migrate image missing from GHCR must leave a warning'
 
 last_build=$(grep -nF -- '- name: Build & push' <<< "$build_push" | tail -1 | cut -d: -f1)
 digests_line=$(line_of build-push '- name: Resolve the digests of the scanned images')
@@ -102,6 +122,19 @@ grep -qFx '          image: ${{ steps.digests.outputs.backend }}' <<< "$(step bu
   || fail 'Grype must scan the backend by its digest, the one the sign job signs'
 grep -qFx '          image: ${{ steps.digests.outputs.frontend }}' <<< "$(step build-push 'Grype scan — frontend (gate)')" \
   || fail 'Grype must scan the frontend by its digest, the one the sign job signs'
+for image in migrate:has-migrate eval-worker:has-worker; do
+  name=${image%%:*} input=${image#*:} output=${name#eval-}
+  grype=$(step build-push "Grype scan — $name (warn phase)")
+  [[ -n "$grype" ]] || fail "build-push must have the step 'Grype scan — $name (warn phase)'"
+  grep -qFx "        id: grype-$output" <<< "$grype" || fail "the $name Grype step must have the id grype-$output"
+  grep -qFx "        if: \${{ inputs.scan-images && inputs.$input }}" <<< "$grype" \
+    || fail "the $name image is scanned exactly when the images are scanned and $input is set"
+  grep -qFx '        continue-on-error: true' <<< "$grype" || fail "the $name Grype scan only warns in this phase (ADR-0019)"
+  grep -qFx "          image: \${{ steps.digests.outputs.$output }}" <<< "$grype" || fail "Grype must scan the $name image by its digest"
+  grep -qFx '          fail-build: true' <<< "$grype" || fail "the $name Grype scan must report a failed outcome on a finding"
+  grep -qFx '          severity-cutoff: ${{ inputs.scan-severity }}' <<< "$grype" || fail "the $name Grype scan uses scan-severity"
+  grep -qFx '          only-fixed: true' <<< "$grype" || fail "the $name Grype scan counts only fixable findings, as the gates do"
+done
 
 # --- bramka Trivy obok Grype ---
 setup_trivy=$(step build-push 'Set up Trivy')
@@ -117,6 +150,9 @@ grep -qFx '          IMAGES: ${{ steps.digests.outputs.images }}' <<< "$trivy_st
   || fail 'Trivy must scan the digest references the digest step resolved'
 grep -qFx '          SCAN_SEVERITY: ${{ inputs.scan-severity }}' <<< "$trivy_step" \
   || fail 'Trivy must take its threshold from inputs.scan-severity, as Grype does'
+grep -qFx '        id: trivy' <<< "$trivy_step" || fail 'the Trivy step must have the id trivy'
+grep -qFx '          WARN_IMAGES: ${{ steps.digests.outputs.warn-images }}' <<< "$trivy_step" \
+  || fail 'Trivy must also scan the migrate and eval-worker images in the warn phase'
 grep -qF 'continue-on-error' <<< "$trivy_step" && fail 'the Trivy scan is a gate and must not continue on error'
 trivy_line=$(line_of build-push '- name: Trivy scan — scanned images (gate)')
 [[ "$(line_of build-push '- name: Set up Trivy')" -lt "$trivy_line" && "$digests_line" -lt "$trivy_line" ]] \
@@ -158,11 +194,55 @@ grep -qF 'scan-severity' "$tmp/out" || fail 'the refusal of an unknown threshold
 trivy_scan FAIL_ON=app-backend && fail 'a finding in the backend must fail the Trivy gate'
 [[ $(grep -c . "$tmp/calls") -eq 2 ]] || fail 'a finding in one image must not stop the scan of the others'
 
+: > "$tmp/github-output"
+trivy_scan GITHUB_OUTPUT="$tmp/github-output" WARN_IMAGES="$migrate $worker" FAIL_ON=app-migrate \
+  || fail 'a finding in the migrate image only warns in this phase (ADR-0019)'
+[[ $(grep -c . "$tmp/calls") -eq 4 ]] || fail 'Trivy must scan the gated and the warn-phase images'
+grep -qF -- "--exit-code 1 --severity HIGH,CRITICAL" <<< "$(grep -F " $worker" "$tmp/calls")" \
+  || fail 'the warn-phase scan must use the flags of the gate'
+grep -qF "::warning title=PLAT-SCA-001 (warn phase)::[PLAT-SCA-001] Trivy found" "$tmp/out" \
+  || fail 'a finding in the migrate image must leave a PLAT-SCA-001 warning'
+[[ "$(cat "$tmp/github-output")" == "warn-passed=$worker" ]] \
+  || fail "only the warn-phase images that passed Trivy are reported, got: $(cat "$tmp/github-output")"
+
+# --- faza ostrzeżenia: podpis tylko obrazów, które przeszły Grype i Trivy ---
+warn_step=$(step build-push 'Choose the migrate and eval-worker digests to sign (warn phase)')
+[[ -n "$warn_step" ]] || fail "build-push must have the step 'Choose the migrate and eval-worker digests to sign (warn phase)'"
+grep -qFx '        id: warn-phase' <<< "$warn_step" || fail 'the warn-phase step must have the id warn-phase'
+grep -qFx '        if: ${{ inputs.scan-images }}' <<< "$warn_step" || fail 'the warn-phase step runs exactly when the images are scanned'
+for pass in '          MIGRATE_IMAGE: ${{ steps.digests.outputs.migrate }}' '          WORKER_IMAGE: ${{ steps.digests.outputs.worker }}' \
+  '          GRYPE_MIGRATE: ${{ steps.grype-migrate.outcome }}' '          GRYPE_WORKER: ${{ steps.grype-worker.outcome }}' \
+  '          TRIVY_PASSED: ${{ steps.trivy.outputs.warn-passed }}'; do
+  grep -qFx -- "$pass" <<< "$warn_step" || fail "the warn-phase step must pass in its env: $pass"
+done
+[[ "$trivy_line" -lt "$(line_of build-push '- name: Choose the migrate and eval-worker digests to sign (warn phase)')" ]] \
+  || fail 'the warn-phase digests are chosen after the Trivy scan'
+block warn-phase-sign > "$tmp/warn.sh"
+[[ -s "$tmp/warn.sh" ]] || fail 'deploy.yml has no warn-phase-sign block between its markers'
+warn_phase() {
+  : > "$tmp/github-output"
+  (env GITHUB_OUTPUT="$tmp/github-output" "$@" bash "$tmp/warn.sh") > "$tmp/out" 2>&1 || return 1
+  paste -sd'|' - < "$tmp/github-output"
+}
+outputs=$(warn_phase MIGRATE_IMAGE="$migrate" WORKER_IMAGE="$worker" GRYPE_MIGRATE=success GRYPE_WORKER=success \
+  TRIVY_PASSED="$migrate $worker") || fail 'the warn-phase-sign block must run'
+[[ "$outputs" == "migrate-digest=$migrate_digest|worker-digest=$worker_digest" ]] \
+  || fail "images that passed both scans are signed, got: $outputs"
+grep -q '::warning' "$tmp/out" && fail 'images that passed both scans need no warning'
+outputs=$(warn_phase MIGRATE_IMAGE="$migrate" WORKER_IMAGE="$worker" GRYPE_MIGRATE=failure GRYPE_WORKER=success \
+  TRIVY_PASSED="$migrate") || fail 'a failed warn-phase scan must not fail the run'
+[[ "$outputs" == "migrate-digest=|worker-digest=" ]] || fail "an image that failed Grype or Trivy stays unsigned, got: $outputs"
+[[ $(grep -c '::warning title=PLAT-SCA-001 (warn phase)::' "$tmp/out") -eq 2 ]] \
+  || fail 'each image that stays unsigned must leave a PLAT-SCA-001 warning'
+outputs=$(warn_phase GRYPE_MIGRATE=skipped GRYPE_WORKER=skipped) || fail 'the warn-phase-sign block must run without the images'
+[[ "$outputs" == "migrate-digest=|worker-digest=" ]] || fail "without the images nothing more is signed, got: $outputs"
+grep -q '::warning' "$tmp/out" && fail 'an image that was not built needs no warning'
+
 # --- sign: podpis po obu bramkach, w jobie bez kodu repozytorium ---
 # GitHub pomija wyjście joba, w którym jest wartość sekretu, a właściciel w referencji obrazu bywa wartością sekretu
 # (GPR_USER konsumenta), więc build-push wystawia same digesty, a sign składa z nich referencje.
 job_outputs=$(awk '/^    outputs:$/ { p = 1; next } p && /^      / { print; next } p { exit }' <<< "$build_push")
-[[ "$job_outputs" == $'      backend-digest: ${{ steps.digests.outputs.backend-digest }}\n      frontend-digest: ${{ steps.digests.outputs.frontend-digest }}' ]] \
+[[ "$job_outputs" == $'      backend-digest: ${{ steps.digests.outputs.backend-digest }}\n      frontend-digest: ${{ steps.digests.outputs.frontend-digest }}\n      migrate-digest: ${{ steps.warn-phase.outputs.migrate-digest }}\n      worker-digest: ${{ steps.warn-phase.outputs.worker-digest }}' ]] \
   || fail "build-push must expose only the scanned digests, never a reference with the owner, which GitHub drops when a secret holds that value; got: $(paste -sd'|' - <<< "$job_outputs")"
 grep -qF 'id-token' <<< "$build_push" && fail 'build-push runs dependency code, so it must never get id-token: write'
 sign=$(job sign)
@@ -181,6 +261,10 @@ grep -qFx '      FRONTEND_DIGEST: ${{ needs.build-push.outputs.frontend-digest }
   || fail 'sign must sign exactly the frontend digest that build-push scanned'
 grep -qFx '      IMAGE_PREFIX: ghcr.io/${{ needs.versions.outputs.owner }}/${{ inputs.app-name }}' <<< "$sign" \
   || fail 'sign must know the image prefix of the application'
+for pass in '      MIGRATE_DIGEST: ${{ needs.build-push.outputs.migrate-digest }}' \
+  '      WORKER_DIGEST: ${{ needs.build-push.outputs.worker-digest }}' '      MIGRATE_IMAGE_SUFFIX: ${{ inputs.migrate-image-suffix }}'; do
+  grep -qFx -- "$pass" <<< "$sign" || fail "sign must get in its env: $pass"
+done
 pinned sigstore/cosign-installer "$(step sign 'Install cosign')" \
   || fail "sign must install cosign in the step 'Install cosign' with sigstore/cosign-installer pinned to a commit SHA"
 
@@ -194,6 +278,13 @@ sign_images BACKEND_DIGEST="$backend_digest" FRONTEND_DIGEST="$frontend_digest" 
   || fail 'the sign-images block must sign two scanned images'
 [[ "$(paste -sd'|' - < "$tmp/calls")" == "sign --yes $backend|sign --yes $frontend" ]] \
   || fail "each digest must be signed keyless, by digest, without a prompt, got: $(paste -sd'|' - < "$tmp/calls")"
+sign_images BACKEND_DIGEST="$backend_digest" FRONTEND_DIGEST="$frontend_digest" MIGRATE_DIGEST="$migrate_digest" \
+  WORKER_DIGEST="$worker_digest" MIGRATE_IMAGE_SUFFIX=migrate || fail 'the sign-images block must sign four scanned images'
+[[ "$(paste -sd'|' - < "$tmp/calls")" == "sign --yes $backend|sign --yes $frontend|sign --yes $migrate|sign --yes $worker" ]] \
+  || fail "the migrate and eval-worker images that passed their scans are signed too, got: $(paste -sd'|' - < "$tmp/calls")"
+sign_images BACKEND_DIGEST="$backend_digest" FRONTEND_DIGEST="$frontend_digest" MIGRATE_DIGEST='sha256:abc' \
+  MIGRATE_IMAGE_SUFFIX=migrate && fail 'a bad migrate digest must refuse the whole set'
+[[ ! -s "$tmp/calls" ]] || fail 'sign checks the migrate digest before it signs any'
 sign_images BACKEND_DIGEST="$backend_digest" FRONTEND_DIGEST='' || fail 'the sign-images block must sign a single scanned image'
 [[ "$(paste -sd'|' - < "$tmp/calls")" == "sign --yes $backend" ]] \
   || fail "a single image must sign only the backend, got: $(paste -sd'|' - < "$tmp/calls")"
@@ -334,7 +425,7 @@ disk_step=$(step build-push 'Free the disk for the Trivy databases')
 grep -qFx '        if: ${{ inputs.scan-images }}' <<< "$disk_step" || fail 'the disk is freed exactly when the images are scanned'
 grep -qF 'continue-on-error' <<< "$disk_step" && fail 'a failure to free the disk must show, not be hidden by continue-on-error'
 disk_line=$(line_of build-push '- name: Free the disk for the Trivy databases')
-grype_line=$(line_of build-push '- name: Grype scan — frontend (gate)')
+grype_line=$(grep -nF -- '- name: Grype scan' <<< "$(job build-push)" | tail -1 | cut -d: -f1)
 trivy_line=$(line_of build-push '- name: Set up Trivy')
 [[ "$grype_line" -lt "$disk_line" && "$disk_line" -lt "$trivy_line" ]] \
   || fail 'the disk is freed after the last Grype gate, which needs its database, and before Trivy is set up'
