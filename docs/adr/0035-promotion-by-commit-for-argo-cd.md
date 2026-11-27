@@ -6,7 +6,8 @@ Accepted — 2026-11-05
 
 Partly superseded (2026-11-20): `deploy.yml` lost its SSH deploy in 1.13.0, so the `ssh-deploy` input, the SSH path
 and the callers that still deployed over SSH described below no longer exist. The decision to promote by commit holds.
-Until 1.13.1 `promote.yml` keeps calling the `deploy.yml` of v1.10.1 with `ssh-deploy: false`.
+Until 1.13.1 `promote.yml` keeps calling the `deploy.yml` of v1.10.1 with `ssh-deploy: false` (moved on
+2026-11-27, see the update below).
 
 ## Context
 
@@ -54,3 +55,19 @@ rewriting the tests that pin `deploy.yml`. Until then `promote.yml` wraps `deplo
 
 GitHub resolves a relative reference at the commit of an annotated tag. `promote.yml` can then return to `./`, and the
 pin goes.
+
+## Update (2026-11-27)
+
+The pin stayed at v1.10.1 past 1.13.1, so promotions kept building with the `deploy.yml` of 1.10.1: none of the
+later action bumps, registry changes or gate fixes reached the only production path. `promote.yml` now calls the
+`deploy.yml` of v2.1.0 by the commit of that tag, without `ssh-deploy` and `platform-ref`, which that `deploy.yml`
+no longer declares; `platform-ref` stays an input of `promote.yml`, whose `promote` job takes
+`scripts/promote-image.sh` from it. The other inputs, the secrets and the `backend-tag` and `frontend-tag` outputs are
+unchanged. `templates/tests/promote-workflow.test.sh` now fails on a pin older than v2.1.0, on a pin whose SHA is not
+the commit of its tag when the tag is present, and on an input that the `deploy.yml` in the tree does not declare.
+
+The certificate subject of a promoted image ends in the pinned commit, so the subject changes with the pin. A cluster
+whose admission policy matches the documented `deploy.yml@` regular expression needs nothing; one that pins
+`deploy.yml@d88288965f4377fbab95db2f850aa70a1d0a2d3f` must allow
+`deploy.yml@1337c3f7db80b969d4462d9728c4c95bd03a5c47` before it promotes with the release that carries this pin.
+Changes to `deploy.yml` after 2.1.0 reach promotions only after the next release and another pin move.
