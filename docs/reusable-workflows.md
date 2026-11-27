@@ -342,6 +342,12 @@ crossed releases affects this repository, what it does not use, and what needs a
   request) is replaced. When the pull request cannot be created, the run deletes the branch again and fails, so the
   next run retries. The body is cut to fit GitHub's limit, keeping the start of the impact report and the end of the
   bump log, with a note saying what was cut.
+- The second job applies only what `platform-bump` changes: the pins, lockfiles and verification metadata, the
+  Gradle wrapper, the agent blocks and the files of its upgrade migrations. In workflow files only Platform
+  workflow references, `platform-ref:` and JDK version lines may change, `gradlew` only together with a new wrapper
+  version, and `gradle-wrapper.jar` only as the jar Gradle publishes for the old or the new wrapper version. Any
+  other change fails the run before anything is pushed; run `scripts/platform-bump.sh` locally then and review
+  the diff.
 - Secret `gpr_token` (optional): a classic PAT with `read:packages`, as for backend-ci.
 - Secret `bump_token` (optional): a classic PAT with the `repo` and `workflow` scopes. A pull request
   opened with the automatic `GITHUB_TOKEN` runs no CI, and that token may not push workflow changes, so

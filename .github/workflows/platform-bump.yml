@@ -127,7 +127,78 @@ jobs:
       - name: Apply the bump
         env:
           PATCH: ${{ runner.temp }}/platform-bump/bump.patch
-        run: if [ -s "$PATCH" ]; then git apply "$PATCH"; fi
+        run: |
+          # >>> apply-patch
+          # Patch pochodzi z joba, który uruchamia kod zależności (npm, Gradle), a ten job pushuje go PAT-em z prawem
+          # do workflowów. Przechodzi więc tylko to, co platform-bump może zmienić: piny, lockfile'e, metadane
+          # weryfikacji, wrapper Gradle, bloki agentów, pliki migracji; w workflowach wyłącznie referencje Platform
+          # i wersje JDK, a gradle-wrapper.jar tylko taki, jaki Gradle publikuje dla starej albo nowej wersji wrappera.
+          set -euo pipefail
+          [ -s "$PATCH" ] || exit 0
+          git apply --index "$PATCH"
+          files=()
+          while IFS= read -r -d '' file; do files+=("$file"); done < <(git diff --cached --name-only --no-renames -z)
+          changed() { local file; for file in "${files[@]}"; do [ "$file" = "$1" ] && return 0; done; return 1; }
+          problems=()
+          allowed() {
+            case "$1" in
+              settings.gradle.kts | backend/settings.gradle.kts | backend/settings-gradle.lockfile) ;;
+              gradle.properties | backend/gradle.properties | backend/*gradle.lockfile | backend/*verification-metadata.xml) ;;
+              frontend/package.json | frontend/package-lock.json | .npmrc | frontend/.npmrc) ;;
+              gradlew | gradlew.bat | gradle/wrapper/gradle-wrapper.properties | gradle/wrapper/gradle-wrapper.jar) ;;
+              backend/gradlew | backend/gradlew.bat | backend/gradle/wrapper/gradle-wrapper.properties | backend/gradle/wrapper/gradle-wrapper.jar) ;;
+              AGENTS.md | CLAUDE.md | backend/AGENTS.md | backend/CLAUDE.md | frontend/AGENTS.md | frontend/CLAUDE.md) ;;
+              Dockerfile | backend/Dockerfile | .sdkmanrc | backend/.sdkmanrc) ;;
+              .github/workflows/*.yml | .github/workflows/*.yaml) ;;
+              *) return 1 ;;
+            esac
+          }
+          q="'"
+          workflow_lines=(
+            "^[-+][[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*(DominikSienkiewicz|SeniorDeveloper-pl-Dominik-Sienkiewicz)/Platform/\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml@v[0-9]+(\.[0-9]+\.[0-9]+)?([[:space:]]+#.*)?$"
+            "^[-+][[:space:]]*platform-ref:[[:space:]]*[\"$q]?v[0-9]+(\.[0-9]+\.[0-9]+)?[\"$q]?[[:space:]]*$"
+            "^[-+][[:space:]]*(toolchain-)?java-version:[[:space:]]*[\"$q]?[0-9]+[\"$q]?[[:space:]]*$"
+          )
+          for file in "${files[@]}"; do
+            if ! allowed "$file"; then problems+=("$file is not a file platform-bump changes"); continue; fi
+            case "$file" in
+              .github/workflows/*)
+                while IFS= read -r line; do
+                  ok=false
+                  for pattern in "${workflow_lines[@]}"; do [[ "$line" =~ $pattern ]] && ok=true; done
+                  "$ok" || problems+=("$file changes a line that is not a Platform workflow reference: $line")
+                done < <(git diff --cached --no-renames -U0 -- "$file" | grep -E '^[-+]' | grep -vE '^(\+\+\+|---) (a/|b/|/dev/null)' || true)
+                ;;
+            esac
+          done
+          distributions="${GRADLE_DISTRIBUTIONS_URL:-https://services.gradle.org/distributions}"
+          proto="=https"
+          case "$distributions" in file://*) proto="=file" ;; esac
+          gradle_version() { sed -n -E 's#^distributionUrl=.*gradle-([0-9.]+)-(bin|all)\.zip.*#\1#p' | head -1; }
+          for dir in "" backend/; do
+            props="${dir}gradle/wrapper/gradle-wrapper.properties"
+            jar="${dir}gradle/wrapper/gradle-wrapper.jar"
+            if { changed "${dir}gradlew" || changed "${dir}gradlew.bat"; } && ! changed "$props"; then
+              problems+=("${dir}gradlew changes without a new Gradle version in $props")
+            fi
+            changed "$jar" || continue
+            actual=""
+            [ -f "$jar" ] && actual=$( (sha256sum "$jar" 2>/dev/null || shasum -a 256 "$jar") | awk '{ print $1 }')
+            matches=false
+            for version in "$([ -f "$props" ] && gradle_version < "$props")" "$(git show "HEAD:$props" 2>/dev/null | gradle_version)"; do
+              [ -n "$version" ] && [ -n "$actual" ] || continue
+              expected=$(curl -fsSL --proto "$proto" --proto-redir "$proto" "$distributions/gradle-$version-wrapper.jar.sha256" 2>/dev/null || true)
+              [ "$expected" = "$actual" ] && matches=true
+            done
+            "$matches" || problems+=("$jar is not the wrapper jar Gradle publishes for the old or the new wrapper version")
+          done
+          if [ "${#problems[@]}" -gt 0 ]; then
+            printf '::error::%s\n' "${problems[@]}"
+            echo "::error::The bump patch changes more than platform-bump may change, so nothing is pushed. Run scripts/platform-bump.sh locally and review the diff."
+            exit 1
+          fi
+          git reset -q
+          # <<< apply-patch
       - name: Open the bump pull request
         env:
           TARGET: ${{ needs.bump.outputs.target }}
