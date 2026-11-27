@@ -30,7 +30,7 @@ jobs:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Tag the reviewed merge with the dependency App
+      - name: Tag the reviewed merge and refresh open dependency PRs
         if: github.event.pull_request.user.login == format('{0}[bot]', steps.app.outputs.app-slug)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
@@ -43,3 +43,4 @@ jobs:
             git fetch --no-tags origin "refs/pull/$PR/head"
           fi
           bash scripts/tag-dependency-release.sh "$MERGE_SHA" "$REVIEWED_HEAD"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" -f event_type=dependency-release-tagged

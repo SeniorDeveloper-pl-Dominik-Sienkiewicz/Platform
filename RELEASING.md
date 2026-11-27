@@ -155,11 +155,16 @@ automatically. [GitHub workflow triggers](https://docs.github.com/en/actions/how
    Check the dependency diff, new checksums, advisory IDs for security fixes and the consumer-action notes.
 2. Wait for CI on the prepared commit. A compatible update gets the next PATCH. An upstream major
    update or consumer-action marker gets the next MINOR with migration notes. Pending hand-written
-   release notes require maintainer review. If another change reaches `main` first, run the daily
-   workflow again to rebase the candidate before merging.
+   release notes require maintainer review. If another dependency PR merges first, wait for Renovate
+   to rebase the remaining open branches and for CI to pass on the newly prepared commits. For example,
+   if two PRs propose `2.1.1`, tagging the first makes the second compatible update propose `2.1.2`.
+   For other changes to `main`, the next scheduled or manual run refreshes the candidates.
 3. Merge the PR on GitHub. The [post-merge workflow](.github/workflows/dependency-release.yml)
    compares the merged tree with the reviewed head. The dependency App creates the annotated tag
-   on the merge commit. That tag push starts `release.yml` once. Full CI must pass before Maven
+   on the merge commit. That tag push starts `release.yml` once. After tagging succeeds, the App sends
+   `dependency-release-tagged` to the daily workflow on `main`. The same discovery run can open new PRs
+   and rebases the open branches Renovate manages. The workflow then recalculates their release versions
+   and changelogs. Branches edited by a maintainer require manual review. Full CI must pass before Maven
    or npm publication.
    If tagging fails, rerun the post-merge job. It verifies an existing tag against the commit
    and release notes. If a Release run fails, rerun its failed jobs. If an existing tag has no

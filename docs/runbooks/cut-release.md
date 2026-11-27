@@ -1,7 +1,8 @@
 # Cut a Platform release
 
 For a dependency update prepared by the daily workflow, review its version and changelog and merge
-the PR on GitHub. The merge triggers release verification on the new tag.
+the PR on GitHub. Tagging starts release verification and refreshes the remaining open Renovate PRs.
+Wait for the new version proposal and its CI before merging the next dependency PR.
 [Daily dependency releases](../../RELEASING.md#daily-dependency-releases).
 
 **Manual release preconditions:** `main` is green and equal to `origin/main`, and the working tree is clean.
