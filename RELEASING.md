@@ -230,6 +230,7 @@ Before it changes anything, `release.sh` refuses to run when:
   `origin` (it fetches them first, so the composed notes and the history check start at the latest release
   even when its tag was pushed after this clone fetched the commit);
 - the message is not a Conventional Commit or contains Polish characters;
+- the version is not higher than the current `platformVersion` (a typo such as 1.21.0 on 2.1.0);
 - the version's tag already exists;
 - a hand-written section for the version has no `### Consumer action required` subsection;
 - supplied arguments do not fit `"<message>" [X.Y.Z] [-y]`, for example a leftover `--skip-canary`;

@@ -109,6 +109,22 @@ work=$(seed_repo ahead)
 git -C "$work" commit -q --allow-empty -m 'not pushed yet'
 assert_refused "$work" 'a main that is not origin/main'
 
+# Wersja niższa lub równa bieżącej (literówka typu 1.21.0 na 2.1.0) wydałaby starszą linię: odmowa przed zmianą.
+for older in 1.2.2 "$CURRENT" 0.9.9; do
+  work=$(seed_repo "older-$older")
+  head_before=$(git -C "$work" rev-parse HEAD)
+  if (cd "$work" && bash ./release.sh "fix: test release" "$older" -y) > "$work.log" 2>&1; then
+    cat "$work.log" >&2
+    fail "release.sh must refuse $older, which is not higher than $CURRENT"
+  fi
+  grep -q "must be higher than the current version $CURRENT" "$work.log" \
+    || { cat "$work.log" >&2; fail "refusing $older must say the version must be higher than $CURRENT"; }
+  [[ "$(git -C "$work" rev-parse HEAD)" == "$head_before" ]] || fail "refusing $older must not commit"
+  [[ -z "$(remote_ref "$work" "refs/tags/v$older")" ]] || fail "refusing $older must not push its tag"
+  grep -qx "platformVersion=$CURRENT" "$work/gradle/build-logic/gradle.properties" \
+    || fail "refusing $older must not bump the version"
+done
+
 work=$(seed_repo clean)
 if ! run_release "$work"; then
   cat "$work.log" >&2

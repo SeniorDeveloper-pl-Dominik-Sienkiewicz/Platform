@@ -15,6 +15,7 @@
 #   - message nie jest angielskim Conventional Commit;
 #   - ręcznie napisana sekcja wersji nie ma podsekcji "### Consumer action required";
 #   - argument spoza formy "<message>" [X.Y.Z] [-y] (np. dawne --skip-canary);
+#   - wersja nie jest wyższa od bieżącej platformVersion;
 #   - sekcję trzeba złożyć, a CHANGELOG.md nie ma "## [Unreleased]", ma pod nim wpisy, jego najnowsza sekcja
 #     wersji nie ma taga, od poprzedniego taga nie ma commitów albo temat commita nie jest Conventional Commit;
 #   - wydanie z akcją konsumenta (podsekcja inna niż "None.") miałoby być patchem;
@@ -122,6 +123,10 @@ if [[ -z "$VERSION" ]]; then
   fi
 fi
 echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "The version '$VERSION' is not X.Y.Z."; exit 1; }
+# Wersja niższa lub równa bieżącej wydałaby starszą linię (np. literówka 1.21.0 na 2.1.0), a tagów nie da się cofnąć.
+if [[ "$VERSION" == "$CUR" || "$(printf '%s\n%s\n' "$CUR" "$VERSION" | sort -V | tail -1)" != "$VERSION" ]]; then
+  echo "The version $VERSION must be higher than the current version $CUR; released versions only move forward."; exit 1
+fi
 
 # Wersje są immutable — tag nie może już istnieć.
 if git rev-parse "v$VERSION" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "v$VERSION" >/dev/null 2>&1; then
