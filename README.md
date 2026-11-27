@@ -317,7 +317,8 @@ use. The logos only identify the services.
 | | Semgrep Registry | The SAST rulesets (`p/default`, `p/secrets`, `p/java` and others) | `semgrep scan --config` with the CLI installed by `pipx` in `semgrep.yml` | Callers, and Platform's `self-scan.yml` |
 | <img src="https://cdn.simpleicons.org/gradle/02303A/ffffff" alt="Gradle" height="20"> | Gradle services | The current Gradle release candidate, on which `upstream-canary.yml` builds a starter | `https://services.gradle.org/versions/release-candidate` | Platform only, Mondays |
 
-What each scan gates and how a finding is accepted is in [docs/security-scanning.md](docs/security-scanning.md).
+Both canon scans check that every Grype exception has a valid expiry date before scanning.
+See [security scanning](docs/security-scanning.md) for the gates and the exception procedure.
 
 ## Reference consumers
 

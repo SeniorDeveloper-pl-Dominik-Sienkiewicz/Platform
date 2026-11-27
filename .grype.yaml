@@ -1,0 +1,7 @@
+ignore:
+  # expires: 2026-12-11; tracking: https://github.com/SeniorDeveloper-pl-Dominik-Sienkiewicz/Platform/issues/16; reason: Apache has not released the cluster TLS-PSK fix in Tomcat 11.0.30
+  - vulnerability: CVE-2026-133325
+    package:
+      name: tomcat-embed-core
+      version: "11.0.29"
+      type: java-archive

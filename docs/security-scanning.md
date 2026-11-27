@@ -9,6 +9,7 @@ cannot fix yet. The caller side of each workflow is in [reusable-workflows.md](r
 |---|---|---|---|
 | Grype on the backend CycloneDX SBOM | `security-scan.yml` | severity at or above `severity-cutoff` (default `high`); with `only-fixed: true`, only findings that have a fix | `.grype.yaml` |
 | Grype on `frontend/package-lock.json` | `security-scan.yml` | the same | `.grype.yaml` |
+| Grype on the Platform canon (backend and frontend) | `canon-cve-scan.yml` | fixable HIGH or CRITICAL findings, or an exception with a missing, invalid or expired date | Platform's `.grype.yaml` |
 | Grype on the pushed images, by digest | `deploy.yml` with `scan-images: true` | severity at or above `scan-severity`, fixable findings only | `.grype.yaml` |
 | Trivy on the pushed images, by digest | `deploy.yml` with `scan-images: true` | the same; every image is scanned before the step fails | `.trivyignore.yaml` |
 | Grype and Trivy on the migration and `eval-worker` images | `deploy.yml` with `scan-images: true` | never yet: a warn phase ([ADR-0019](adr/0019-new-failure-modes-warn-first.md)); a finding leaves the image unsigned | `.grype.yaml`, `.trivyignore.yaml` |
@@ -47,7 +48,8 @@ An accepted finding is a decision with an owner and an end date, not a silenced 
    that forces a second look: weeks, not years.
 3. When the date passes, `security-scan.yml` fails with the entry and its line. Fix the finding, or
    renew the entry with a new date and the outcome recorded in the issue. An entry without a date
-   only produces a warning, so add one when you see it.
+   only produces a warning in `security-scan.yml`. Platform's canon scan requires a valid date for
+   every exception. Both canon jobs accept it through the end of the stated date in UTC.
 4. When the finding is in a pushed image, accept it for Trivy too, because both scanners gate
    `deploy.yml`. Add an entry to `.trivyignore.yaml` in the repository root, in Trivy's own format.
    Trivy honours `expired_at` itself: after that date the entry stops applying and the gate fails again.
