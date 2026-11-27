@@ -10,7 +10,9 @@ name: Build, scan and sign images (reusable)
 #   • single-image: jeden obraz backendu z eksportem frontendu w jarze (npm ci + npm run build przed bootJar),
 #     bez obrazu frontendu
 #   • scan-images: tag -> digest raz, potem bramki Grype i Trivy na tym digeście, a job sign podpisuje cosign keyless
-#     dokładnie te digesty, dopiero gdy obie bramki przeszły (łańcuch dostaw, Kyverno verifyImages po stronie klastra)
+#     dokładnie te digesty, dopiero gdy obie bramki przeszły (łańcuch dostaw, Kyverno verifyImages po stronie klastra);
+#     obrazy migracji i eval-worker skanuje i podpisuje w fazie ostrzeżenia (ADR-0019): znalezisko ostrzega i zostawia
+#     obraz bez podpisu, a nie wywraca runu
 #
 # Wołane z cienkiego callera z jawnymi sekretami (nie `inherit`) — snippet w docs/reusable-workflows.md:
 #   uses: SeniorDeveloper-pl-Dominik-Sienkiewicz/Platform/.github/workflows/deploy.yml@vX.Y.Z
@@ -177,6 +179,8 @@ jobs:
     outputs:
       backend-digest: ${{ steps.digests.outputs.backend-digest }}
       frontend-digest: ${{ steps.digests.outputs.frontend-digest }}
+      migrate-digest: ${{ steps.warn-phase.outputs.migrate-digest }}
+      worker-digest: ${{ steps.warn-phase.outputs.worker-digest }}
     env:
       OWNER: ${{ needs.versions.outputs.owner }}
       APP: ${{ inputs.app-name }}
@@ -325,15 +329,28 @@ jobs:
       # GitHub usuwa najstarsze wpisy po przekroczeniu, więc przy rzadkich wydaniach to zysk, nie ryzyko.
       # Bramki i podpis dotyczą tych samych bajtów: tag z GHCR zamieniany na digest raz, potem wszystko po digeście.
       # Obraz pominięty jako już istniejący też dostaje digest, więc ponowny run po poprawionym wyjątku go podpisze.
+      # Obrazy migracji i eval-worker są w fazie ostrzeżenia (ADR-0019): poza listą bramki, a brak digestu tylko ostrzega.
       - name: Resolve the digests of the scanned images
         id: digests
         if: ${{ inputs.scan-images }}
         env:
           SINGLE_IMAGE: ${{ inputs.single-image }}
+          HAS_MIGRATE: ${{ inputs.has-migrate }}
+          HAS_WORKER: ${{ inputs.has-worker }}
+          MIGRATE_IMAGE_SUFFIX: ${{ inputs.migrate-image-suffix }}
         run: |
           # >>> image-digests
           set -euo pipefail
           digest_of() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -er .digest; }
+          # warn_phase_ref <zmienna> <nazwa:tag>: referencja po digeście albo ostrzeżenie i pusta zmienna.
+          warn_phase_ref() {
+            local digest
+            if digest=$(digest_of "$REGISTRY/$OWNER/$2"); then
+              printf -v "$1" '%s' "$REGISTRY/$OWNER/${2%:*}@$digest"
+            else
+              echo "::warning title=PLAT-SCA-001 (warn phase)::[PLAT-SCA-001] Could not resolve the digest of $REGISTRY/$OWNER/$2, so it is neither scanned nor signed."
+            fi
+          }
           backend_digest=$(digest_of "$REGISTRY/$OWNER/$APP-backend:$BACKEND_VER")
           backend="$REGISTRY/$OWNER/$APP-backend@$backend_digest"
           frontend="" frontend_digest=""
@@ -341,8 +358,13 @@ jobs:
             frontend_digest=$(digest_of "$REGISTRY/$OWNER/$APP-frontend:$FRONTEND_VER")
             frontend="$REGISTRY/$OWNER/$APP-frontend@$frontend_digest"
           fi
+          migrate="" worker=""
+          if [ "${HAS_MIGRATE:-false}" = "true" ]; then warn_phase_ref migrate "$APP-$MIGRATE_IMAGE_SUFFIX:$MIGRATE_VER"; fi
+          if [ "${HAS_WORKER:-false}" = "true" ]; then warn_phase_ref worker "$APP-eval-worker:$BACKEND_VER"; fi
+          warn_images="$migrate${migrate:+${worker:+ }}$worker"
           { echo "backend=$backend"; echo "frontend=$frontend"; echo "images=$backend${frontend:+ $frontend}"
-            echo "backend-digest=$backend_digest"; echo "frontend-digest=$frontend_digest"; } | tee -a "$GITHUB_OUTPUT"
+            echo "backend-digest=$backend_digest"; echo "frontend-digest=$frontend_digest"
+            echo "migrate=$migrate"; echo "worker=$worker"; echo "warn-images=$warn_images"; } | tee -a "$GITHUB_OUTPUT"
           # <<< image-digests
       # ---- Opt-in gate: skan obrazów PO push, PRZED podpisem. Fail Grype albo Trivy => job pada => job sign nie
       #      podpisze obrazu, więc Kyverno go nie wpuści, choć leży w GHCR.
@@ -361,6 +383,30 @@ jobs:
         uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
         with:
           image: ${{ steps.digests.outputs.frontend }}
+          fail-build: true
+          severity-cutoff: ${{ inputs.scan-severity }}
+          only-fixed: true
+          output-format: table
+      # Faza ostrzeżenia (ADR-0019): ten sam skan co bramka, ale porażka tylko zostawia obraz bez podpisu; wynik czyta
+      # krok warn-phase. W późniejszym MINOR te kroki staną się bramkami.
+      - name: Grype scan — migrate (warn phase)
+        id: grype-migrate
+        if: ${{ inputs.scan-images && inputs.has-migrate }}
+        continue-on-error: true
+        uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
+        with:
+          image: ${{ steps.digests.outputs.migrate }}
+          fail-build: true
+          severity-cutoff: ${{ inputs.scan-severity }}
+          only-fixed: true
+          output-format: table
+      - name: Grype scan — eval-worker (warn phase)
+        id: grype-worker
+        if: ${{ inputs.scan-images && inputs.has-worker }}
+        continue-on-error: true
+        uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
+        with:
+          image: ${{ steps.digests.outputs.worker }}
           fail-build: true
           severity-cutoff: ${{ inputs.scan-severity }}
           only-fixed: true
@@ -392,9 +438,11 @@ jobs:
         with:
           version: v0.76.2
       - name: Trivy scan — scanned images (gate)
+        id: trivy
         if: ${{ inputs.scan-images }}
         env:
           IMAGES: ${{ steps.digests.outputs.images }}
+          WARN_IMAGES: ${{ steps.digests.outputs.warn-images }}
           SCAN_SEVERITY: ${{ inputs.scan-severity }}
         run: |
           # >>> trivy-scan
@@ -409,13 +457,51 @@ jobs:
           esac
           ignore=()
           if [ -f .trivyignore.yaml ]; then ignore=(--ignorefile .trivyignore.yaml); fi
+          scan() {
+            trivy image --image-src remote --scanners vuln --ignore-unfixed --exit-code 1 --severity "$severity" \
+              ${ignore[@]+"${ignore[@]}"} "$1"
+          }
           failed=0
           for image in $IMAGES; do
-            trivy image --image-src remote --scanners vuln --ignore-unfixed --exit-code 1 --severity "$severity" \
-              ${ignore[@]+"${ignore[@]}"} "$image" || failed=1
+            scan "$image" || failed=1
           done
+          # Faza ostrzeżenia (ADR-0019): obrazy migracji i eval-worker nie wywracają runu; krok warn-phase podpisze tylko te,
+          # które przeszły także Grype.
+          passed=()
+          for image in ${WARN_IMAGES:-}; do
+            if scan "$image"; then
+              passed+=("$image")
+            else
+              echo "::warning title=PLAT-SCA-001 (warn phase)::[PLAT-SCA-001] Trivy found vulnerabilities at or above scan-severity in $image; it stays unsigned, and a later MINOR fails the run instead (ADR-0019)."
+            fi
+          done
+          echo "warn-passed=${passed[*]-}" >> "${GITHUB_OUTPUT:-/dev/null}"
           exit "$failed"
           # <<< trivy-scan
+      - name: Choose the migrate and eval-worker digests to sign (warn phase)
+        id: warn-phase
+        if: ${{ inputs.scan-images }}
+        env:
+          MIGRATE_IMAGE: ${{ steps.digests.outputs.migrate }}
+          WORKER_IMAGE: ${{ steps.digests.outputs.worker }}
+          GRYPE_MIGRATE: ${{ steps.grype-migrate.outcome }}
+          GRYPE_WORKER: ${{ steps.grype-worker.outcome }}
+          TRIVY_PASSED: ${{ steps.trivy.outputs.warn-passed }}
+        run: |
+          # >>> warn-phase-sign
+          set -euo pipefail
+          # passed <obraz> <wynik Grype>: obraz przeszedł Grype i Trivy; inaczej ostrzega (obraz, który powstał).
+          passed() {
+            [ -n "$1" ] || return 1
+            if [ "$2" = success ] && [[ " ${TRIVY_PASSED:-} " == *" $1 "* ]]; then return 0; fi
+            echo "::warning title=PLAT-SCA-001 (warn phase)::[PLAT-SCA-001] $1 did not pass both the Grype and the Trivy scan, so it stays unsigned; a later MINOR fails the run instead (ADR-0019)."
+            return 1
+          }
+          migrate_digest="" worker_digest=""
+          if passed "${MIGRATE_IMAGE:-}" "${GRYPE_MIGRATE:-}"; then migrate_digest=${MIGRATE_IMAGE#*@}; fi
+          if passed "${WORKER_IMAGE:-}" "${GRYPE_WORKER:-}"; then worker_digest=${WORKER_IMAGE#*@}; fi
+          { echo "migrate-digest=$migrate_digest"; echo "worker-digest=$worker_digest"; } | tee -a "$GITHUB_OUTPUT"
+          # <<< warn-phase-sign
 
   # ---- Snyk: druga opinia, nieblokująca, pomijana bez SNYK_TOKEN. Osobny job, bo obraz Snyka dostaje gniazdo
   #      Dockera hosta: tu może co najwyżej CZYTAĆ GHCR, a w build-push miałby packages: write. Podpis na ten job
@@ -476,6 +562,9 @@ jobs:
     env:
       BACKEND_DIGEST: ${{ needs.build-push.outputs.backend-digest }}
       FRONTEND_DIGEST: ${{ needs.build-push.outputs.frontend-digest }}
+      MIGRATE_DIGEST: ${{ needs.build-push.outputs.migrate-digest }}
+      WORKER_DIGEST: ${{ needs.build-push.outputs.worker-digest }}
+      MIGRATE_IMAGE_SUFFIX: ${{ inputs.migrate-image-suffix }}
       IMAGE_PREFIX: ghcr.io/${{ needs.versions.outputs.owner }}/${{ inputs.app-name }}
     steps:
       - name: Install cosign
@@ -497,6 +586,8 @@ jobs:
           fi
           images=("$IMAGE_PREFIX-backend@$BACKEND_DIGEST")
           if [ -n "${FRONTEND_DIGEST:-}" ]; then images+=("$IMAGE_PREFIX-frontend@$FRONTEND_DIGEST"); fi
+          if [ -n "${MIGRATE_DIGEST:-}" ]; then images+=("$IMAGE_PREFIX-${MIGRATE_IMAGE_SUFFIX:?}@$MIGRATE_DIGEST"); fi
+          if [ -n "${WORKER_DIGEST:-}" ]; then images+=("$IMAGE_PREFIX-eval-worker@$WORKER_DIGEST"); fi
           for image in "${images[@]}"; do
             if [[ ! "${image#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
               echo "::error::Refusing to sign '$image': its digest is not a sha256 digest."

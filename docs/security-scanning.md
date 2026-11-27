@@ -11,6 +11,7 @@ cannot fix yet. The caller side of each workflow is in [reusable-workflows.md](r
 | Grype on `frontend/package-lock.json` | `security-scan.yml` | the same | `.grype.yaml` |
 | Grype on the pushed images, by digest | `deploy.yml` with `scan-images: true` | severity at or above `scan-severity`, fixable findings only | `.grype.yaml` |
 | Trivy on the pushed images, by digest | `deploy.yml` with `scan-images: true` | the same; every image is scanned before the step fails | `.trivyignore.yaml` |
+| Grype and Trivy on the migration and `eval-worker` images | `deploy.yml` with `scan-images: true` | never yet: a warn phase ([ADR-0019](adr/0019-new-failure-modes-warn-first.md)); a finding leaves the image unsigned | `.grype.yaml`, `.trivyignore.yaml` |
 | Grype on published images | `container-scan.yml` | severity at or above `severity-cutoff`, fixable findings only by default | `only-fixed` and `severity-cutoff`; the job does not check the repository out, so `.grype.yaml` does not apply |
 | Semgrep | `semgrep.yml` | findings of severity `CRITICAL`, `HIGH` or `ERROR`; `MEDIUM`, `WARNING`, `LOW` and `INFO` are listed and counted only | `# nosemgrep: <rule-id>` |
 | Snyk | `container-scan.yml`, `deploy.yml` | never: advisory only | — |
@@ -81,7 +82,10 @@ therefore never runs it.
   `single-image` is set, to a digest once. Grype and Trivy scan that digest, and the `sign` job signs the same
   digest. `build-push` passes `sign` only the digests, and `sign` adds `ghcr.io/<owner>/<app-name>` itself:
   GitHub drops a job output that contains a secret's value, and the owner's login is often a secret's value,
-  for example `GPR_USER`. The migration and `eval-worker` images are not scanned, so they are not signed either.
+  for example `GPR_USER`. The migration and `eval-worker` images (`has-migrate`, `has-worker`) are in a warn phase
+  ([ADR-0019](adr/0019-new-failure-modes-warn-first.md)): Grype and Trivy scan them by digest with the same
+  threshold, a finding leaves a `PLAT-SCA-001 (warn phase)` warning instead of failing the run, and `sign` signs
+  each of them only when both scans passed. A later MINOR turns these scans into gates.
 - **How.** cosign keyless, through the public Sigstore instance. Fulcio issues a short-lived certificate from
   the job's GitHub OIDC token, so no signing key exists. The signature is a Sigstore bundle, attached to the
   image in GHCR as an OCI referrer (cosign 3). Its in-toto statement names the image only by its digest.

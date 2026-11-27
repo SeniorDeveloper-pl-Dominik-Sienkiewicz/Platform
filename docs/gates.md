@@ -137,13 +137,18 @@ the scripts `lint`, `typecheck`, `test`, `build` and `format:check`, or `@senior
 
 **Cause:** Semgrep found findings of severity CRITICAL, HIGH or ERROR (`semgrep.yml`). Semgrep rules use two
 scales, and Semgrep treats ERROR as HIGH, WARNING as MEDIUM and INFO as LOW; findings of the lower levels are
-listed in the log and do not fail the run.
-**Fix:** fix them, or record an exception as [security-scanning.md](security-scanning.md) describes.
+listed in the log and do not fail the run. The same code fails the run when Semgrep exits with 2 or more, even if
+it wrote a result: a scanner that could not load a ruleset or parse a rule proves nothing about the code.
+**Fix:** fix them, or record an exception as [security-scanning.md](security-scanning.md) describes. For a scanner
+failure, read the scanner errors the log prints above the annotation, and rerun once the ruleset loads.
 
 ### PLAT-SCA-001
 
 **Cause:** Grype found vulnerabilities at or above the severity cutoff in the SBOM, the frontend lockfile or
-an image (`security-scan.yml`, `container-scan.yml`).
+an image (`security-scan.yml`, `container-scan.yml`). In `deploy.yml` with `scan-images: true`, the annotation
+`PLAT-SCA-001 (warn phase)` is a warning for the migration or `eval-worker` image: Grype or Trivy found such a
+vulnerability, or its digest could not be resolved, so the image stays unsigned
+([ADR-0019](adr/0019-new-failure-modes-warn-first.md); a later MINOR fails the run instead).
 **Fix:** move to a fixed version; accept a finding without a fix only through `.grype.yaml`
 ([security-scanning.md](security-scanning.md)).
 

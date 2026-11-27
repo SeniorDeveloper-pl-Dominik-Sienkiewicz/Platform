@@ -178,7 +178,11 @@ automatically. [GitHub workflow triggers](https://docs.github.com/en/actions/how
    `promote.yml` pins `deploy.yml` the same way ([ADR-0035](docs/adr/0035-promotion-by-commit-for-argo-cd.md)),
    so a change to `deploy.yml` reaches a promotion only when that pin moves. Run
    `git diff <pinned-sha> HEAD -- .github/workflows/deploy.yml`; if the change matters to a promotion, move the pin
-   to the latest release that has it.
+   to the latest release that has it: take the commit with `git rev-parse 'vX.Y.Z^{commit}'`, keep the
+   `# vX.Y.Z` comment, check that every input under `with:` of the `build` job is still declared by that
+   `deploy.yml`, and raise the floor in `templates/tests/promote-workflow.test.sh`. The pinned commit is part of
+   the certificate subject of promoted images, so say in the notes that an admission policy pinned to the old
+   commit must allow the new one ([signed images](docs/security-scanning.md#signed-images)).
 2. Run `scripts/consumer-audit.sh` to see which consumers and pins the release reaches
    (the report describes private repositories, so it stays local and never runs in CI), and who
    still calls a workflow it changes. Then decide on the notes. Pick the number by the
