@@ -29,6 +29,7 @@
 # z --refresh-dependencies, więc ten krok pobiera metadane od nowa i trwa wyraźnie dłużej niż sam bump
 # pinów — to celowe, powody niżej przy bloku. Pierwszy bump po dodaniu drugiego przebiegu poszerza
 # gradle.lockfile o konfiguracje spoza grafu `build` (pitest, cyclonedxBom) — jednorazowy, celowy diff.
+# Bez zmiany wejścia Gradle (pin, wrapper, plik migracji) oba przebiegi są pomijane.
 #
 # Logika wydania DOCELOWEGO (N-DX-4): kopia, która nie jest wydaniem celu, po ustaleniu celu pobiera paczkę
 # versions@TARGET z assetów GitHub Release (publiczne, bez PAT-a, SHA256SUMS i atestacja) i oddaje jej sterowanie,
@@ -847,7 +848,26 @@ done
 # platform-bump:wrapper-end
 
 # platform-bump:gradle
-if [[ -f backend/settings.gradle.kts ]]; then
+# Regeneracja kosztuje pełny build z --refresh-dependencies, więc idzie tylko wtedy, gdy bump zmienił wejście Gradle
+# (piny, wrapper, plik dopisany przez migrację). Frontend, workflowy, bloki agentów i same pliki wynikowe (lockfile'e,
+# verification-metadata) nim nie są; nieznany zmieniony plik liczy się jako wejście, czyli regeneracja zostaje.
+gradle_inputs_changed() {
+  local file
+  for file in "${CANDIDATES[@]}"; do
+    case "$file" in
+      frontend/* | .github/* | *gradle.lockfile | *verification-metadata.xml | AGENTS.md | */AGENTS.md | CLAUDE.md | */CLAUDE.md) continue ;;
+    esac
+    if [[ -e "$SNAPSHOT/files/$file" ]]; then
+      [[ -e "$file" ]] && cmp -s "$SNAPSHOT/files/$file" "$file" || return 0
+    elif [[ -e "$file" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+if [[ -f backend/settings.gradle.kts ]] && ! gradle_inputs_changed; then
+  echo "==> Backend: no Gradle input changed, so the lockfiles and verification metadata stay as they are"
+elif [[ -f backend/settings.gradle.kts ]]; then
   echo "==> Backend: regenerating the locked state (--write-locks)"
   if [[ -f backend/gradle/verification-metadata.xml ]]; then
     ( cd backend && ./gradlew build --write-locks --write-verification-metadata sha256 --refresh-dependencies --no-daemon )
