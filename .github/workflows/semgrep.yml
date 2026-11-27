@@ -51,7 +51,7 @@ jobs:
       # reguły package_managers). Według Semgrepa ERROR = HIGH, WARNING = MEDIUM, INFO = LOW, więc blokują
       # CRITICAL, HIGH i ERROR, a reszta, także severity spoza obu skal, jest log-only. Blok `run:` tego kroku
       # uruchamia templates/tests/semgrep-gate.test.sh.
-      - name: Semgrep — SAST (jeden skan, bramka CRITICAL/HIGH/ERROR)
+      - name: Semgrep — SAST (single scan, CRITICAL/HIGH/ERROR gate)
         env:
           SEMGREP_CONFIGS: ${{ inputs.config }}
         run: |
