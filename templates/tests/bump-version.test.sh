@@ -97,3 +97,19 @@ bash "$tmp/app/scripts/bump-version.sh" backend patch > "$tmp/out" 2>&1 || rc=$?
 grep -qF "No 'version=' in" "$tmp/out" || fail "a gradle.properties without version= must say so: $(cat "$tmp/out")"
 echo 'OK: bump-version names the missing version= instead of exiting silently'
 )
+
+# --- english-changeset ---
+# Nowy changeset Liquibase, który bump-version.sh wpisuje do repo konsumenta, ma komentarz po angielsku.
+(
+canon="$(cd "$(dirname "$0")/.." && pwd)/bump-version.sh"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/app/scripts" "$tmp/app/backend/src/main/resources/db/changelog"
+cp "$canon" "$tmp/app/scripts/bump-version.sh"
+printf 'databaseChangeLog: []\n' > "$tmp/app/backend/src/main/resources/db/changelog/db.changelog-master.yaml"
+bash "$tmp/app/scripts/bump-version.sh" db new-migration orders > /dev/null
+changeset="$tmp/app/backend/src/main/resources/db/changelog/changes/0001-orders.yaml"
+grep -qx '      # TODO: add the operations (createTable/addColumn/sql...); migrations are forward-only.' "$changeset" \
+  || fail "the changeset comment must be English: $(cat "$changeset")"
+echo 'OK: bump-version writes an English changeset'
+)

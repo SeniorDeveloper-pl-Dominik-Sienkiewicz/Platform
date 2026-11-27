@@ -93,7 +93,7 @@ databaseChangeLog:
       id: ${seq}-${ARG}
       author: ${AUTHOR}
       changes: []
-      # TODO: dodaj operacje (createTable/addColumn/sql...) — migracje forward-only.
+      # TODO: add the operations (createTable/addColumn/sql...); migrations are forward-only.
 YAML
     # master może być pustą listą "[]" — zamień na blok listowy zanim dopniesz include
     if grep -qE '^databaseChangeLog:[[:space:]]*\[[[:space:]]*\][[:space:]]*$' "$master"; then
