@@ -122,6 +122,7 @@ w skrypcie builda wywala `templates/tests/platform-version-sync.test.sh`. Placeh
 w `libs.versions.toml` jest celowo nierozwiązywalny.
 Codziennie o 04:23 UTC `daily-dependencies.yml` przygotowuje PR Renovate z zależnościami, numerem wydania i changelogiem.
 Po scaleniu tego PR-a przez właściciela na GitHubie `dependency-release.yml` oznacza zweryfikowane drzewo tagiem i uruchamia zwykłe wydanie.
+Po udanym tagowaniu aplikacja uruchamia `daily-dependencies.yml`, który aktualizuje pozostałe otwarte gałęzie Renovate względem `main` i przelicza ich wersje oraz changelogi.
 Publikacja na tag `vX.Y.Z`. Bump = jeden PR tu + bump pinu w repo konsumentach przez `scripts/platform-bump.sh` albo reusable `platform-bump.yml` (Decyzja 5; preset Renovate pomija ramę i aktualizuje resztę).
 
 **Kontrakt wydania: `docs/adr/0002-release-and-versioning-contract.md`.** Akcja konsumenta = MINOR w linii
