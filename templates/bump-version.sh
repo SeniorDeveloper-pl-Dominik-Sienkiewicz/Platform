@@ -59,7 +59,7 @@ case "$LAYER" in
   backend)
     [[ -n "$ACTION" ]] || usage
     file="$ROOT/backend/gradle.properties"
-    current="$(grep -E '^version=' "$file" | head -1 | cut -d= -f2 | tr -d '[:space:]')"
+    current="$({ grep -E '^version=' "$file" || true; } | head -1 | cut -d= -f2 | tr -d '[:space:]')"
     [[ -n "$current" ]] || { echo "No 'version=' in $file" >&2; exit 1; }
     next="$(bump_semver "$current" "$ACTION")"
     sed_inplace "s/^version=.*/version=${next}/" "$file"

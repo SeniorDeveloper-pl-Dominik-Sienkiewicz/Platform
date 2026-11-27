@@ -101,9 +101,9 @@ CATALOG_PKG="pl.seniordeveloper.platform-catalog"
 
 TOKEN="${GPR_TOKEN:-${GITHUB_TOKEN:-}}"
 if [[ -z "$TOKEN" ]] && [[ -f "$HOME/.gradle/gradle.properties" ]]; then
-  TOKEN="$(grep -E '^gpr\.key=' "$HOME/.gradle/gradle.properties" | cut -d= -f2- | tr -d ' ')"
+  TOKEN="$({ grep -E '^gpr\.key=' "$HOME/.gradle/gradle.properties" || true; } | cut -d= -f2- | tr -d ' ')"
 fi
-[[ -z "$TOKEN" ]] && { echo "No token: set GPR_TOKEN or GITHUB_TOKEN, or gpr.key in ~/.gradle/gradle.properties."; exit 1; }
+[[ -z "$TOKEN" ]] && { echo "No token: set GPR_TOKEN or GITHUB_TOKEN, or gpr.key in ~/.gradle/gradle.properties." >&2; exit 1; }
 
 VERSIONS_JSON=""
 RELEASES_JSON=""
