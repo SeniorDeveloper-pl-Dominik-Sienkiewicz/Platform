@@ -89,9 +89,10 @@ Platform does not analyse its own modules in SonarQube Cloud
 no `SONAR_TOKEN` secret.
 
 The `consumer-impact.yml` workflow labels a pull request `consumer-action` when
-`scripts/canon-diff.py` finds a change consumers must act on: a removed catalog alias or canon
-package, or a reusable workflow that loses an input or secret, gains a required input or a
-permission, or changes a default. Create the label once (`gh label create consumer-action`); until
+`scripts/canon-diff.py` finds a change consumers must act on: a removed catalog alias, a move of the
+`java` toolchain (CI and the final Dockerfile `FROM` must follow, PLAT-IMG-001), or a reusable workflow
+that loses an input or secret, gains a required input, a required secret or a permission, turns a secret
+required, or changes an input type or a default. Create the label once (`gh label create consumer-action`); until
 it exists the job only warns. Such a change calls for at least a MINOR release with a **Consumer action required** entry.
 
 It never deletes a branch: it lists remote branches already merged into `main` with the command that
