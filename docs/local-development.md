@@ -8,7 +8,7 @@ Frontend requirements: Node.js ≥ 22.13 (this repository is built with Node 24)
 ```bash
 # Gradle — publish every module of gradle/maven-modules.txt to the local Maven repository
 # (a smoke test that needs no registry):
-./buildAndPublishLocal.sh --skip-frontend
+./scripts/buildAndPublishLocal.sh --skip-frontend
 
 # Frontend:
 cd frontend && pnpm install
@@ -45,12 +45,12 @@ no convention reads the local Maven repository implicitly.
 
 | Layer | Locally, without GitHub | CI / after push |
 |---|---|---|
-| Gradle (plugins + catalog) | Run `./buildAndPublishLocal.sh`, then build the consumer with `-PplatformVersion=<version> -PplatformRepository=file://$HOME/.m2/repository`; the explicit local repository comes first | GitHub Packages uses `GITHUB_ACTOR` / `GITHUB_TOKEN` |
+| Gradle (plugins + catalog) | Run `./scripts/buildAndPublishLocal.sh`, then build the consumer with `-PplatformVersion=<version> -PplatformRepository=file://$HOME/.m2/repository`; the explicit local repository comes first | GitHub Packages uses `GITHUB_ACTOR` / `GITHUB_TOKEN` |
 | npm (frontend packages) | `npm install --no-save <absolute path>/Platform/frontend/packages/<name>` installs the live local source without touching `package.json` | dependencies resolve from the registry at the exact Platform version |
 
 ```bash
 # Once, in the platform — publishes the Gradle modules to ~/.m2/repository and installs the frontend:
-./buildAndPublishLocal.sh                  # (--skip-frontend / --help)
+./scripts/buildAndPublishLocal.sh                  # (--skip-frontend / --help)
 
 # In a consuming backend (it prints this command with the version filled in):
 ./gradlew build -PplatformVersion=<version> -PplatformRepository=file://$HOME/.m2/repository

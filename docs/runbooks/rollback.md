@@ -9,7 +9,7 @@ release is therefore fixed forward, and consumers are kept off it with the yank 
 1. Add a line to [`releases/yanked.txt`](../../releases/yanked.txt) on `main`: the version, the
    reason and the replacement. From then on `platform-bump` without a version skips it, and an
    explicit `platform-bump <version>` refuses it unless `--allow-yanked` is passed.
-2. Fix forward: merge the fix and cut the next release with `./release.sh` ([RELEASING.md](../../RELEASING.md)).
+2. Fix forward: merge the fix and cut the next release with `./scripts/release.sh` ([RELEASING.md](../../RELEASING.md)).
    A fix that only consumers need to take is a PATCH; one that needs consumer action is a MINOR
    with a **Consumer action required** entry ([ADR-0002](../adr/0002-release-and-versioning-contract.md)).
 3. Say in the new release's CHANGELOG section which version it replaces and why.

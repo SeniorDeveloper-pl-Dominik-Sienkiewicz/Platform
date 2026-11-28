@@ -11,12 +11,12 @@
 # in resolution order); see docs/local-development.md.
 #
 # Usage:
-#   ./buildAndPublishLocal.sh                 # Gradle + frontend
-#   ./buildAndPublishLocal.sh --skip-frontend # Gradle only (the modules of gradle/maven-modules.txt)
-#   ./buildAndPublishLocal.sh --help
+#   ./scripts/buildAndPublishLocal.sh                 # Gradle + frontend
+#   ./scripts/buildAndPublishLocal.sh --skip-frontend # Gradle only (the modules of gradle/maven-modules.txt)
+#   ./scripts/buildAndPublishLocal.sh --help
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SKIP_FRONTEND=0
 
 for arg in "$@"; do

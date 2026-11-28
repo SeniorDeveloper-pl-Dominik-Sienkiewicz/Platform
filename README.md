@@ -171,7 +171,7 @@ Every task, property and default they add is listed in [docs/reference.md](docs/
 
 ```mermaid
 flowchart LR
-  release["./release.sh"] -->|annotated tag| tag(("vX.Y.Z"))
+  release["./scripts/release.sh"] -->|annotated tag| tag(("vX.Y.Z"))
   tag --> workflow["release.yml<br/>after green ci.yml"]
   workflow --> maven[("GitHub Packages Maven<br/>plugins, catalog, BOM,<br/>test-fixtures, observability-starter")]
   workflow --> npm[("GitHub Packages npm<br/>@seniordeveloper-pl-dominik-sienkiewicz/*")]
@@ -210,7 +210,7 @@ changelogs based on `main`. [Setup and release procedure](RELEASING.md#daily-dep
 
 ### From a tag to a consumer pull request
 
-For a manual release, run `./release.sh` on a clean `main` synchronized with `origin/main`.
+For a manual release, run `./scripts/release.sh` on a clean `main` synchronized with `origin/main`.
 It shows the proposed version and release notes for confirmation. [Release runbook](docs/runbooks/cut-release.md)
 
 Read it top to bottom: nothing is published before `ci.yml` passes on the tagged commit, and a consumer adopts
@@ -232,7 +232,7 @@ sequenceDiagram
         D->>R: Push the version tag
         D->>D: Trigger a refresh of the remaining Renovate PRs
     else Maintainer release
-        M->>R: ./release.sh pushes main and the tag vX.Y.Z
+        M->>R: ./scripts/release.sh pushes main and the tag vX.Y.Z
     end
     R->>R: verify: ci.yml on the tagged commit
     R->>P: publish the Maven modules and npm packages, attest their provenance

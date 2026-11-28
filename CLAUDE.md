@@ -59,7 +59,7 @@ opublikuj, podbij pin w repo konsumenta.
    sekcję, pilnuje `templates/tests/gate-codes.test.sh`; ID doctora `PD0xx` zostają osobnym kontraktem.
    **Deprecacje** (N-REL-9): `platform-deprecations.tsv` w pluginie i mapa `deprecated` w `versions.json` —
    ostrzeżenie `PLAT-DEPR-001`, `-Pplatform.deprecations.mode=fail` failuje (tak biegnie TestKit Platform).
-   Biblioteka używana w ≥ 2 repo = najpierw wpis tu + `./release.sh`. Po każdej zmianie tego, co moduły Platform pobierają
+   Biblioteka używana w ≥ 2 repo = najpierw wpis tu + `./scripts/release.sh`. Po każdej zmianie tego, co moduły Platform pobierają
    (bump katalogu, nowa biblioteka, plugin): `scripts/write-verification-metadata.sh` — build-logic, test-fixtures
    i observability-starter mają `gradle/verification-metadata.xml`, weryfikowane strict (docs/versions.md).
 2. **Convention plugin nie dodaje zależności biznesowych** (security, jOOQ, resilience4j, modele AI).
@@ -81,7 +81,7 @@ opublikuj, podbij pin w repo konsumenta.
    `js-yaml`, należy do konsumenta); `peerDependencies` aplikacji świadomie poza nią. Piny `@seniordeveloper-pl-dominik-sienkiewicz/*` poza
    `overrides` muszą być EXACT i równe wydaniu zainstalowanej paczki `versions`. Wyjątek:
    referencje npm w formie `"$nazwa"` (np. `"typescript": "$typescript"`) — rozwija je npm, guard
-   i bump ich nie ruszają. Biblioteka używana w ≥ 2 repo = najpierw wpis w kanonie + `./release.sh`. Uwaga:
+   i bump ich nie ruszają. Biblioteka używana w ≥ 2 repo = najpierw wpis w kanonie + `./scripts/release.sh`. Uwaga:
    kanon trzyma WERSJE — o tym, CZY repo używa danej biblioteki, decyduje repo (zasada 2 bez zmian).
    Własny workspace `frontend/` podlega tej samej zasadzie: `dependencies`/`devDependencies` każdej paczki
    = kanon, `eslint-config` i `prettier-config` mają też dokładne peery, pozostałe peery to zakresy dopuszczające kanon
@@ -131,13 +131,13 @@ Publikacja na tag `vX.Y.Z`. Bump = jeden PR tu + bump pinu w repo konsumentach p
 napisana sekcja wygrywa; bez niej `release.sh` składa ją `scripts/release-notes.sh` z commitów od ostatniego taga
 (trailery `Consumer-Action:` i commity z `!`, inaczej `None.`) i wstawia pod `## [Unreleased]`.
 
-**`./release.sh` bez argumentów** proponuje PATCH lub MINOR, pokazuje notatki i prosi o potwierdzenie.
+**`./scripts/release.sh` bez argumentów** proponuje PATCH lub MINOR, pokazuje notatki i prosi o potwierdzenie.
 Uwzględnia akcje konsumentów z pełnej historii oraz przygotowaną sekcję następnego wydania.
 Własny komunikat w formacie angielskiego Conventional Commit trafia do treści commita wydania.
 
-- `./release.sh "fix: opis"` — patch +0.0.1 od aktualnej wersji
-- `./release.sh "feat: opis" 1.2.0` — konkretna wersja (obowiązkowa dla `feat`/`!:`/`BREAKING CHANGE`)
-- `./release.sh "..." 1.2.0 -y` — pomiń potwierdzenie (lub `ASSUME_YES=1`)
+- `./scripts/release.sh "fix: opis"` — patch +0.0.1 od aktualnej wersji
+- `./scripts/release.sh "feat: opis" 1.2.0` — konkretna wersja (obowiązkowa dla `feat`/`!:`/`BREAKING CHANGE`)
+- `./scripts/release.sh "..." 1.2.0 -y` — pomiń potwierdzenie (lub `ASSUME_YES=1`)
 
 Skrypt odmawia, gdy drzewo robocze nie jest czyste, gałąź ≠ `main`, `HEAD` ≠ `origin/main`, message nie jest
 angielskim Conventional Commit, argument nie pasuje do formy, sekcji nie da się złożyć (brak `## [Unreleased]`, wpisy

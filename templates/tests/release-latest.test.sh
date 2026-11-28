@@ -15,8 +15,7 @@ git config user.name 'Release Test'
 git config user.email 'release-test@example.invalid'
 git remote add origin "$tmp/origin.git"
 mkdir -p gradle/build-logic frontend/packages/example scripts docs
-cp "$root/release.sh" .
-cp "$root/scripts/"{changelog-section,release-notes}.sh scripts/
+cp "$root/scripts/"{release,changelog-section,release-notes}.sh scripts/
 printf 'platformVersion=2.0.1\n' > gradle/build-logic/gradle.properties
 printf '{\n  "version": "2.0.1"\n}\n' > frontend/packages/example/package.json
 printf '## [Unreleased]\n\n## [2.0.1] - 2026-11-01\n\n### Consumer action required\n\nNone.\n' > CHANGELOG.md
@@ -37,7 +36,7 @@ git merge -q --no-ff update -m 'Merge pull request #15 from example/update' -m '
 git push -qu origin main v2.0.1
 
 before=$(git rev-parse HEAD)
-if ! bash release.sh <<< n > "$tmp/plan" 2>&1; then
+if ! bash scripts/release.sh <<< n > "$tmp/plan" 2>&1; then
   cat "$tmp/plan" >&2
   fail 'the zero-argument release should present a plan'
 fi
@@ -51,7 +50,7 @@ python3 - <<'PROMPT'
 from pathlib import Path
 import subprocess
 
-with subprocess.Popen(["bash", "release.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+with subprocess.Popen(["bash", "scripts/release.sh"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                       stderr=subprocess.STDOUT, text=True) as release:
     for line in release.stdout:
         if line.startswith("Plan:"):
@@ -68,7 +67,7 @@ PROMPT
 git restore --staged -- other-work
 rm other-work
 
-release() { ASSUME_YES=1 bash release.sh > "$tmp/run" 2>&1 || { cat "$tmp/run" >&2; return 1; }; }
+release() { ASSUME_YES=1 bash scripts/release.sh > "$tmp/run" 2>&1 || { cat "$tmp/run" >&2; return 1; }; }
 remote_commit() { git --git-dir="$tmp/origin.git" rev-parse "$1^{commit}"; }
 release
 released=$(git rev-parse HEAD)
@@ -110,7 +109,7 @@ cat > "$tmp/origin.git/hooks/update" <<'HOOK'
 [[ $1 != refs/tags/v2.2.1 ]]
 HOOK
 chmod +x "$tmp/origin.git/hooks/update"
-if ASSUME_YES=1 bash release.sh > "$tmp/rejected" 2>&1; then fail 'a rejected tag must fail publication'; fi
+if ASSUME_YES=1 bash scripts/release.sh > "$tmp/rejected" 2>&1; then fail 'a rejected tag must fail publication'; fi
 [[ $(remote_commit main) == "$before" ]] || fail 'a rejected tag must leave remote main unchanged'
 if git --git-dir="$tmp/origin.git" show-ref --verify --quiet refs/tags/v2.2.1; then fail 'the rejected release must have no remote tag'; fi
 release_commit=$(git rev-parse 'v2.2.1^{commit}')

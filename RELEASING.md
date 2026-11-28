@@ -107,7 +107,7 @@ Keep `1.13.1` in the release-managed version files during preparation. Once the 
 the release preconditions hold, the owner selects the explicit version:
 
 ```bash
-./release.sh "feat: publish Platform packages under the organization" 2.0.0
+./scripts/release.sh "feat: publish Platform packages under the organization" 2.0.0
 ```
 
 The release gate verifies the first 2.x release against its published 1.x predecessor.
@@ -214,7 +214,7 @@ automatically. [GitHub workflow triggers](https://docs.github.com/en/actions/how
 4. Run the release helper and confirm the displayed version and notes.
 
 ```bash
-./release.sh
+./scripts/release.sh
 ```
 
 With no arguments it uses the published tag for the current `platformVersion` and checks every
@@ -223,8 +223,8 @@ it proposes the next PATCH. A prepared changelog section for the next PATCH or M
 precedence and must satisfy the same checks. Running it again at the released commit reports
 that the tag already exists and finishes.
 
-To supply your own release message, use `./release.sh "fix: short description"` for the next
-patch, or `./release.sh "feat: publish under new coordinates" 3.0.0` for an explicit version.
+To supply your own release message, use `./scripts/release.sh "fix: short description"` for the next
+patch, or `./scripts/release.sh "feat: publish under new coordinates" 3.0.0` for an explicit version.
 The English Conventional Commit becomes the body of the release commit. Append `-y` after
 an explicit version or set `ASSUME_YES=1` to skip confirmation.
 
@@ -233,7 +233,7 @@ used as it is. Without one, `release.sh` composes it with `scripts/release-notes
 the previous `vX.Y.Z` tag and inserts it under an empty `## [Unreleased]`, dated today: the first-parent
 subjects (including the conventional PR title from a default GitHub merge) grouped as **Added** (`feat`), **Fixed** (`fix`) and **Changed** (every other type), and under
 `### Consumer action required` the `Consumer-Action:` trailers of every commit in the range, the merge
-commits of `./merge.sh` included, plus a `Breaking change: …` line for a commit without a trailer that has a
+commits of `./scripts/merge.sh` included, plus a `Breaking change: …` line for a commit without a trailer that has a
 `!` in its subject or a `BREAKING CHANGE:` footer. A merge commit and the commits it brings in count as one change: a
 trailer on either side replaces the `Breaking change:` line of the other, so a `!` repeated in the merge message
 adds nothing. The same text from several commits (a trailer repeated in the merge message) is listed once, and
@@ -266,7 +266,7 @@ Before it changes anything, `release.sh` refuses to run when:
 - a commit since the previous release's tag, a merge commit included, carries a
   `Consumer-Action: <what to do>` trailer, a `!` in its subject or a `BREAKING CHANGE:` footer, and the
   release would be a patch or its section says `None.`; the error lists those commits. Record a consumer
-  action in the commit that causes it, as the pull request template asks, or in the `./merge.sh` message.
+  action in the commit that causes it, as the pull request template asks, or in the `./scripts/merge.sh` message.
   This check and the composed section read the markers from one place,
   `scripts/release-notes.sh --markers`.
 
@@ -365,14 +365,14 @@ safe: it publishes only the packages that are still missing.
 
 ## Merge messages and pull request titles
 
-`scripts/merge.sh` (`./merge.sh` in Platform) refuses a merge message that is not a Conventional Commit, as
+`scripts/merge.sh` refuses a merge message that is not a Conventional Commit, as
 `release.sh` does: the merge commits on `main` are what `scripts/release-notes.sh` turns into the next
 section. The `pr-title` job of `ci.yml` checks a pull request title against the same pattern. It stays an
-advisory check, not a required one in the `main` ruleset: the owner integrates by direct push (`./merge.sh`, then
+advisory check, not a required one in the `main` ruleset: the owner integrates by direct push (`./scripts/merge.sh`, then
 `git push`) and `release.sh` pushes its release commit, and a required status check would reject every such push,
 because a commit made locally never carries a `pr-title` run.
 `scripts/release-notes.sh v<previous>..HEAD` shows the next section and any `Consumer-Action:` trailer before
-`./release.sh`.
+`./scripts/release.sh`.
 
 ## Support policy
 

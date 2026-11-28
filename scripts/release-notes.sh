@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# release-notes.sh <from>..<to> — treść sekcji CHANGELOG.md z historii wydania; ./release.sh składa nią sekcję
+# release-notes.sh <from>..<to> — treść sekcji CHANGELOG.md z historii wydania; ./scripts/release.sh składa nią sekcję
 # wersji, gdy CHANGELOG.md jej nie ma. Tematy idą z historii first-parent (merge.sh scala z --no-ff, więc commity
 # gałęzi się nie dublują), pogrupowane według typu Conventional Commit. "Consumer action required" zbiera ze
 # wszystkich commitów zakresu, także z merge commitów merge.sh, trailery Consumer-Action, a commit bez trailera ze

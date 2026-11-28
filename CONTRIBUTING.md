@@ -17,7 +17,7 @@ and pnpm.
   frontend version into `frontend/packages/versions/versions.json`; nothing else carries a version literal. The
   hard rules are in [AGENTS.md](AGENTS.md).
 - **One branch per change, in a worktree.** Work on `<type>/<description>-YYYY-MM-DD` under `.worktrees/`; the
-  maintainer integrates it with `./merge.sh <branch> "<conventional commit message>"`.
+  maintainer integrates it with `./scripts/merge.sh <branch> "<conventional commit message>"`.
 - **Conventional Commits** for commit messages and pull request titles (`ci.yml` checks the title). Record what a
   consumer must do in a `Consumer-Action:` trailer and under `### Consumer action required` in `CHANGELOG.md`
   ([release contract](docs/adr/0002-release-and-versioning-contract.md)).

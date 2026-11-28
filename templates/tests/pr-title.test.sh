@@ -16,7 +16,8 @@ awk '
 # shellcheck disable=SC2016 # literal GitHub expression
 grep -qF "if: \${{ github.event_name == 'pull_request' }}" "$root/.github/workflows/ci.yml" || fail 'pr-title must run only on pull requests'
 
-cp "$root/release.sh" "$tmp/release.sh"
+mkdir -p "$tmp/scripts"
+cp "$root/scripts/release.sh" "$tmp/scripts/release.sh"
 check() { (cd "$tmp" && TITLE="$1" bash "$tmp/title.sh") > "$tmp/out" 2>&1; }
 for title in 'feat(versions): add upgrade migrations' 'fix: keep the lockfile' 'ci!: require packages: read'; do
   check "$title" || { cat "$tmp/out"; fail "\"$title\" is a Conventional Commit"; }
@@ -26,7 +27,7 @@ for title in 'ci fix' 'Update scripts' 'feat:missing space' 'Feat: capital type'
   grep -qF 'must be a Conventional Commit' "$tmp/out" || { cat "$tmp/out"; fail 'the failure must explain the rule'; }
 done
 
-sed -i.bak '/^CONVENTIONAL=/d' "$tmp/release.sh"
+sed -i.bak '/^CONVENTIONAL=/d' "$tmp/scripts/release.sh"
 if check 'fix: anything'; then fail 'without the pattern in release.sh the check must fail, not pass everything'; fi
 
 # pr-title jest doradczy: właściciel integruje bezpośrednim pushem (merge.sh + push, release.sh), a wymagany check

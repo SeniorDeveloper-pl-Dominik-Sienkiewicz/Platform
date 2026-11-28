@@ -507,14 +507,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          sparse-checkout: release.sh
+          sparse-checkout: scripts/release.sh
           sparse-checkout-cone-mode: false
       - name: Check the title
         env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
-          pattern=$(sed -n "s/^CONVENTIONAL='\(.*\)'$/\1/p" release.sh)
-          [ -n "$pattern" ] || { echo "::error::release.sh defines no CONVENTIONAL pattern"; exit 1; }
+          pattern=$(sed -n "s/^CONVENTIONAL='\(.*\)'$/\1/p" scripts/release.sh)
+          [ -n "$pattern" ] || { echo "::error::scripts/release.sh defines no CONVENTIONAL pattern"; exit 1; }
           if ! grep -Eq "$pattern" <<<"$TITLE"; then
             echo "::error::The pull request title must be a Conventional Commit, for example \"fix(versions): keep the lockfile\" (got \"$TITLE\")."
             exit 1

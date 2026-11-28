@@ -4,7 +4,7 @@
 `-PplatformRepository` is the only official way (Decision 6): never copy a convention plugin or a config into the
 consumer.
 
-1. In Platform: `./buildAndPublishLocal.sh` publishes to `~/.m2/repository` and prints the consumer command with
+1. In Platform: `./scripts/buildAndPublishLocal.sh` publishes to `~/.m2/repository` and prints the consumer command with
    the version filled in.
 2. In the consumer: `./gradlew build -PplatformVersion=<version> -PplatformRepository=file://$HOME/.m2/repository`
    ([local development](../local-development.md)). The local artifacts carry the version of `gradle.properties`,
