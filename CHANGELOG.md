@@ -20,6 +20,16 @@ artifact was published. Its tag was removed and releases continued under the per
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-11-28
+
+### Consumer action required
+
+None.
+
+### Fixed
+
+- gate release tags on CI and use a published frontend baseline (5683747)
+
 ## [2.2.0] - 2026-11-28
 
 ### Consumer action required
