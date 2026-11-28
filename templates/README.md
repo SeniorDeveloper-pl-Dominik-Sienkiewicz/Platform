@@ -43,7 +43,7 @@ hand from the repository root with `frontend/node_modules/.bin/platform-template
 
 Tests of the template scripts live in `templates/tests/` and run in CI (the "Templates" job).
 Platform uses the canonical `templates/merge.sh`, `worktree-new.sh` and `worktree-status.sh` through thin
-delegates in its root ([`../merge.sh`](../merge.sh)), so its own copies of the helpers cannot drift from the canon.
+delegates in `scripts/` ([`scripts/merge.sh`](../scripts/merge.sh)), so its own copies of the helpers cannot drift from the canon.
 
 CI (reusable workflows), versions (catalog), quality (convention plugins), the linter config, the
 frontend packages and the Renovate preset are distributed automatically (artifacts and `extends`),

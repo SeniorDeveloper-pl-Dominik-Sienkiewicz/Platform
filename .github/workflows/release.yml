@@ -41,7 +41,7 @@ jobs:
           # wersja w GitHub Packages ma swój tag i odwrotnie. Dispatch z gałęzi kończy się tutaj.
           # >>> tag-version-bijection
           if [ "$GITHUB_REF" != "refs/tags/v$V" ]; then
-            echo "::error::Release must run from tag v$V, the platformVersion; it ran from $GITHUB_REF. Release with ./release.sh."
+            echo "::error::Release must run from tag v$V, the platformVersion; it ran from $GITHUB_REF. Release with ./scripts/release.sh."
             exit 1
           fi
           # <<< tag-version-bijection

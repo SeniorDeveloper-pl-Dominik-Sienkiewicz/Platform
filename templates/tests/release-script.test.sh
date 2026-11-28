@@ -51,7 +51,7 @@ seed_repo() {
   done
   mkdir -p "$work/scripts"
   printf '# Changelog\n\n## [%s] - 2026-10-18\n\n### Consumer action required\n\nNone.\n' "$NEXT" > "$work/CHANGELOG.md"
-  cp "$root/release.sh" "$work/release.sh"
+  cp "$root/scripts/release.sh" "$work/scripts/release.sh"
   cp "$root/scripts/changelog-section.sh" "$work/scripts/changelog-section.sh"
   cp "$root/scripts/release-notes.sh" "$work/scripts/release-notes.sh"
   echo '# fixture' > "$work/README.md"
@@ -64,7 +64,7 @@ seed_repo() {
 
 run_release() {
   local work="$1"
-  (cd "$work" && bash ./release.sh "fix: test release" "$NEXT" -y) > "$work.log" 2>&1
+  (cd "$work" && bash ./scripts/release.sh "fix: test release" "$NEXT" -y) > "$work.log" 2>&1
 }
 
 remote_ref() {
@@ -113,7 +113,7 @@ assert_refused "$work" 'a main that is not origin/main'
 for older in 1.2.2 "$CURRENT" 0.9.9; do
   work=$(seed_repo "older-$older")
   head_before=$(git -C "$work" rev-parse HEAD)
-  if (cd "$work" && bash ./release.sh "fix: test release" "$older" -y) > "$work.log" 2>&1; then
+  if (cd "$work" && bash ./scripts/release.sh "fix: test release" "$older" -y) > "$work.log" 2>&1; then
     cat "$work.log" >&2
     fail "release.sh must refuse $older, which is not higher than $CURRENT"
   fi
@@ -196,7 +196,7 @@ seed_repo() {
   mkdir -p "$work/frontend/packages/alpha" "$work/scripts"
   printf '{\n  "name": "@example/alpha",\n  "version": "%s"\n}\n' "$CURRENT" > "$work/frontend/packages/alpha/package.json"
   printf '# Changelog\n\n## [Unreleased]\n\n%s\n' "$changelog" > "$work/CHANGELOG.md"
-  cp "$root/release.sh" "$work/release.sh"
+  cp "$root/scripts/release.sh" "$work/scripts/release.sh"
   cp "$root/scripts/changelog-section.sh" "$work/scripts/changelog-section.sh"
   cp "$root/scripts/release-notes.sh" "$work/scripts/release-notes.sh"
   git -C "$work" add -A
@@ -215,7 +215,7 @@ section() {
 run_release() {
   local work="$1"
   shift
-  (cd "$work" && ASSUME_YES=1 bash ./release.sh "$@") > "$work.log" 2>&1
+  (cd "$work" && ASSUME_YES=1 bash ./scripts/release.sh "$@") > "$work.log" 2>&1
 }
 
 assert_refused() {
@@ -264,7 +264,7 @@ work=$(seed_repo no-action "$(printf '## [1.2.4] - 2026-10-18\n\n### Fixed\n\n- 
 assert_refused "$work" 'a section without Consumer action required' 'Consumer action required' 'fix: patch it'
 
 work=$(seed_repo action-patch "$(section 1.2.4 '- Grant packages: read.')")
-assert_refused "$work" 'a patch that requires consumer action' './release.sh "fix: patch it" 1.3.0' 'fix: patch it'
+assert_refused "$work" 'a patch that requires consumer action' './scripts/release.sh "fix: patch it" 1.3.0' 'fix: patch it'
 
 # --- Minor z akcją konsumenta --------------------------------------------------------------
 work=$(seed_repo minor "$(section 1.3.0 '- Grant packages: read.')")
@@ -311,7 +311,7 @@ seed_repo() {
   printf 'platformVersion=1.2.3\n' > "$work/gradle/build-logic/gradle.properties"
   printf '{\n  "name": "@example/alpha",\n  "version": "1.2.3"\n}\n' > "$work/frontend/packages/alpha/package.json"
   printf '# Changelog\n\n## [1.2.4] - 2026-10-18\n\n### Consumer action required\n\nNone.\n' > "$work/CHANGELOG.md"
-  cp "$root/release.sh" "$work/release.sh"
+  cp "$root/scripts/release.sh" "$work/scripts/release.sh"
   cp "$root/scripts/changelog-section.sh" "$work/scripts/changelog-section.sh"
   cp "$root/scripts/release-notes.sh" "$work/scripts/release-notes.sh"
   git -C "$work" add -A
@@ -332,7 +332,7 @@ assert_untouched() {
 # (a) pusty komunikat wypisuje użycie
 work=$(seed_repo empty-message)
 head=$(git -C "$work" rev-parse HEAD)
-if (cd "$work" && bash ./release.sh "" 1.2.4 -y) > "$work.log" 2>&1; then
+if (cd "$work" && bash ./scripts/release.sh "" 1.2.4 -y) > "$work.log" 2>&1; then
   fail "an empty message must be refused"
 fi
 grep -q 'release.sh "commit message" \[X.Y.Z\] \[-y\]' "$work.log" || fail "an empty message must print the usage"
@@ -342,7 +342,7 @@ assert_untouched "$work" "$head" ""
 work=$(seed_repo existing-tag)
 git -C "$work" tag v1.2.4
 head=$(git -C "$work" rev-parse HEAD)
-if (cd "$work" && bash ./release.sh "fix: test release" 1.2.4 -y) > "$work.log" 2>&1; then
+if (cd "$work" && bash ./scripts/release.sh "fix: test release" 1.2.4 -y) > "$work.log" 2>&1; then
   fail "a version whose tag exists must be refused"
 fi
 grep -q 'Tag v1.2.4' "$work.log" || fail "the refusal must name the existing tag"
@@ -353,7 +353,7 @@ work=$(seed_repo stray-argument)
 head=$(git -C "$work" rev-parse HEAD)
 for args in '1.2.4|--skip-canary|consumers offline' '1.2.4|-y|extra' '--skip-canary'; do
   IFS='|' read -r -a extra <<<"$args"
-  if (cd "$work" && ASSUME_YES=1 bash ./release.sh "fix: test release" "${extra[@]}") > "$work.log" 2>&1; then
+  if (cd "$work" && ASSUME_YES=1 bash ./scripts/release.sh "fix: test release" "${extra[@]}") > "$work.log" 2>&1; then
     fail "release.sh must refuse the arguments: ${extra[*]}"
   fi
   grep -qF 'Unexpected argument' "$work.log" || { cat "$work.log"; fail "the refusal must name the unexpected argument (${extra[*]})"; }
@@ -361,7 +361,7 @@ for args in '1.2.4|--skip-canary|consumers offline' '1.2.4|-y|extra' '--skip-can
 done
 grep -qF 'Unexpected argument "--skip-canary"' "$work.log" || fail 'the refusal must quote the argument'
 # "-y" w miejscu wersji: odmowa podpowiada obie poprawne formy.
-if (cd "$work" && bash ./release.sh "fix: test release" -y) > "$work.log" 2>&1; then fail 'a -y in place of the version must be refused'; fi
+if (cd "$work" && bash ./scripts/release.sh "fix: test release" -y) > "$work.log" 2>&1; then fail 'a -y in place of the version must be refused'; fi
 for hint in 'ASSUME_YES=1' '"fix: test release" X.Y.Z -y'; do
   grep -qF -- "$hint" "$work.log" \
     || { cat "$work.log"; fail "the refusal of -y in place of the version must point to $hint"; }
@@ -399,7 +399,7 @@ seed() {
   mkdir -p "$work/frontend/packages/alpha" "$work/scripts"
   printf '{\n  "name": "@example/alpha",\n  "version": "1.2.3"\n}\n' > "$work/frontend/packages/alpha/package.json"
   printf '# Changelog\n\n' > "$work/CHANGELOG.md"
-  cp "$root/release.sh" "$work/release.sh"
+  cp "$root/scripts/release.sh" "$work/scripts/release.sh"
   cp "$root/scripts/changelog-section.sh" "$work/scripts/changelog-section.sh"
   cp "$root/scripts/release-notes.sh" "$work/scripts/release-notes.sh"
   git -C "$work" add -A
@@ -433,7 +433,7 @@ release() {
   local work="$1"
   shift
   set +e
-  (cd "$work" && ASSUME_YES=1 bash ./release.sh "$@") > "$work.log" 2>&1
+  (cd "$work" && ASSUME_YES=1 bash ./scripts/release.sh "$@") > "$work.log" 2>&1
   rc=$?
   set -e
 }
@@ -562,7 +562,7 @@ if grep -q 'keep the lockfile' <<<"$notes"; then fail 'a hand-written section mu
 # do komendy MINOR (nie ma sekcji do przemianowania).
 work=$(seed composed-untagged-patch no "$trailer" "$unreleased")
 release "$work" "fix: release" 1.2.4
-refused "$work" './release.sh "fix: release" 1.3.0' ''
+refused "$work" './scripts/release.sh "fix: release" 1.3.0' ''
 grep -qF 'CHANGELOG.md lists consumer action for 1.2.4, so it must be a MINOR release:' "$work.log" || { cat "$work.log"; fail 'the refusal must say why'; }
 if grep -q 'rename the section' "$work.log"; then cat "$work.log"; fail 'a composed section has no heading to rename'; fi
 work=$(seed composed-untagged-minor no "$trailer" "$unreleased")

@@ -69,7 +69,7 @@ grep -qF '@seniordeveloper-pl-dominik-sienkiewicz/versions@1.6.0' <<<"$OUT" || f
 grep -qF 'from the repository root run scripts/platform-bump.sh 1.6.0' <<<"$OUT" \
   || fail "the fix must name scripts/platform-bump.sh, where to run it from and the canon version"
 if grep -qF './platform-bump.sh' <<<"$OUT"; then fail "no consumer has ./platform-bump.sh"; fi
-if grep -qF './release.sh' <<<"$OUT"; then fail "./release.sh is a Platform maintainer command"; fi
+if grep -qE '\./(scripts/)?release\.sh' <<<"$OUT"; then fail "scripts/release.sh is a Platform maintainer command"; fi
 
 # (f) a clean run names the canon release too
 run_case clean '{ "dependencies": { "next": "16.2.12" }, "devDependencies": { "typescript": "6.0.3" } }'

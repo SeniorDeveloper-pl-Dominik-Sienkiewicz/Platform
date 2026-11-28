@@ -47,7 +47,7 @@ CI also runs the reusable `backend-ci.yml` on the `java-library` starter.
 
 ## 5. A release that cannot be half published
 
-[`release.sh`](../release.sh) tags only from a clean `main` equal to `origin/main`, with an English
+[`release.sh`](../scripts/release.sh) tags only from a clean `main` equal to `origin/main`, with an English
 Conventional Commit and a CHANGELOG section whose consumer actions decide between PATCH and MINOR.
 [`release.yml`](../.github/workflows/release.yml) publishes only after CI passes on the tag, skips modules
 whose version already exists instead of swallowing a conflict, attests every file, proves that every

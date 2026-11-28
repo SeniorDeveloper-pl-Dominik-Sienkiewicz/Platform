@@ -14,9 +14,9 @@ requires a manual release from the combined, reviewed changes on current `main`.
 1. Optional: to write the notes by hand, turn `## [Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` with a
    `### Consumer action required` section (`None.` when there is none), and merge that change the usual way.
    Without it, `release.sh` composes the section from the commits since the last tag.
-2. Run `./release.sh` and review the proposed version and notes. The default is the next PATCH,
+2. Run `./scripts/release.sh` and review the proposed version and notes. The default is the next PATCH,
    or the next MINOR for recorded consumer actions. To choose a specific version, use
-   `./release.sh "<conventional commit>" X.Y.Z`. Distribution changes require an explicit MAJOR.
+   `./scripts/release.sh "<conventional commit>" X.Y.Z`. Distribution changes require an explicit MAJOR.
 3. Confirm the release. The helper commits the version files, any generated notes and the pending
    compatibility row. It pushes the release commit and annotated tag atomically.
    `release.yml` publishes after `ci.yml` is green on the tagged commit.

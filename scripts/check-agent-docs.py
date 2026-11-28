@@ -4,7 +4,7 @@
 Reads the code spans of templates/agents/platform-block.md and the other templates/agents/*-block.md, AGENTS.md,
 docs/consumer-agents.md and docs/runbooks/*.md:
 - a path under a Platform root (scripts/, templates/, docs/, gradle/, frontend/packages/, .github/workflows/) or a
-  root script (./release.sh) exists in the tree; a consumer path scripts/<x> may be the template templates/<x>, which
+  root script (./tool.sh) exists in the tree; a consumer path scripts/<x> may be the template templates/<x>, which
   templates/manifest.json must then ship to consumers as scripts/<x>;
 - `./gradlew <task>` names a task the build-logic sources register, or a task of Gradle or of an applied plugin;
 - a platform-<name> word is a bin of one of the frontend/packages/*/package.json;

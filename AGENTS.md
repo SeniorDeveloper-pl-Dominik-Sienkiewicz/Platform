@@ -38,13 +38,14 @@ consumer's `AGENTS.md`.
 
 ## Working here
 
+- Platform maintenance commands live in `scripts/`.
 - Gate: `./gradlew lint` and `./gradlew format` in the module you touched, `shellcheck` and `actionlint`
   for scripts and workflows; tests only when asked. A gate failure names its code (`docs/gates.md`).
 - Every bug fix starts with a regression test; an existing test changes only with the owner's approval.
-- Releases: run `./release.sh` on a clean, synchronized `main`. Use `./release.sh "<conventional commit>" X.Y.Z` for an explicit version. See
+- Releases: run `./scripts/release.sh` on a clean, synchronized `main`. Use `./scripts/release.sh "<conventional commit>" X.Y.Z` for an explicit version. See
   `RELEASING.md` and `docs/runbooks/cut-release.md`.
 - Work in a worktree under `.worktrees/` on `<type>/<description>-YYYY-MM-DD`; the owner integrates with
-  `./merge.sh <branch> "<conventional commit message>"`.
+  `./scripts/merge.sh <branch> "<conventional commit message>"`.
 - New concepts, plans and analyses go to the ignored `docs/concepts/`.
 
 ## The block consumers get

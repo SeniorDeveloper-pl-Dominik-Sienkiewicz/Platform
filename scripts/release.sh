@@ -24,12 +24,12 @@
 #     BREAKING CHANGE, a wydanie byłoby patchem albo jego sekcja w CHANGELOG mówi "None.".
 #
 # Użycie:
-#   ./release.sh                               # dobiera PATCH lub MINOR z historii i pokazuje plan
-#   ./release.sh "fix: opis zmiany"            # patch +0.0.1 od aktualnej wersji
-#   ./release.sh "feat: opis" 1.2.0            # konkretna wersja
-#   ./release.sh "..." 1.2.0 -y                # bez pytania o potwierdzenie (też: ASSUME_YES=1)
+#   ./scripts/release.sh                               # dobiera PATCH lub MINOR z historii i pokazuje plan
+#   ./scripts/release.sh "fix: opis zmiany"            # patch +0.0.1 od aktualnej wersji
+#   ./scripts/release.sh "feat: opis" 1.2.0            # konkretna wersja
+#   ./scripts/release.sh "..." 1.2.0 -y                # bez pytania o potwierdzenie (też: ASSUME_YES=1)
 set -euo pipefail
-cd "$(dirname "$0")"   # zawsze z roota Platform
+cd "$(dirname "${BASH_SOURCE[0]}")/.."   # zawsze z roota Platform
 
 MSG="${1:-}"
 VERSION="${2:-}"
@@ -38,7 +38,7 @@ if [[ $# -eq 0 ]]; then
   LATEST=1
   MSG="chore: release the latest changes on main"
 fi
-[[ -z "$MSG" ]] && { echo "Usage: ./release.sh \"commit message\" [X.Y.Z] [-y]"; exit 1; }
+[[ -z "$MSG" ]] && { echo "Usage: ./scripts/release.sh \"commit message\" [X.Y.Z] [-y]"; exit 1; }
 # Gdy podano argumenty, obowiązuje forma "<message>" [X.Y.Z] [-y]: inny argument (np. dawne --skip-canary) to pomyłka, której nie wolno pominąć.
 STRAY=""
 if [[ "${2:-}" == -* ]]; then STRAY="$2"
@@ -46,9 +46,9 @@ elif [[ $# -ge 3 ]] && [[ "$3" != "-y" ]]; then STRAY="$3"
 elif [[ $# -gt 3 ]]; then STRAY="$4"
 fi
 if [[ -n "$STRAY" ]]; then
-  echo "Unexpected argument \"$STRAY\". Usage: ./release.sh \"commit message\" [X.Y.Z] [-y]"
+  echo "Unexpected argument \"$STRAY\". Usage: ./scripts/release.sh \"commit message\" [X.Y.Z] [-y]"
   if [[ "$STRAY" == "-y" ]]; then
-    echo "-y comes after the version: ./release.sh \"$MSG\" X.Y.Z -y, or ASSUME_YES=1 ./release.sh \"$MSG\" for the next patch."
+    echo "-y comes after the version: ./scripts/release.sh \"$MSG\" X.Y.Z -y, or ASSUME_YES=1 ./scripts/release.sh \"$MSG\" for the next patch."
   fi
   exit 1
 fi
@@ -153,7 +153,7 @@ if ! bash scripts/changelog-section.sh "$VERSION" CHANGELOG.md > /dev/null; then
   if [[ -n "$NEWEST" ]] && ! git rev-parse -q --verify "refs/tags/v$NEWEST" > /dev/null \
     && ! git ls-remote --exit-code --tags origin "v$NEWEST" > /dev/null 2>&1; then
     echo "The newest section of CHANGELOG.md, \"## [$NEWEST]\", has no v$NEWEST tag: release $NEWEST first"
-    echo "(./release.sh \"<message>\" $NEWEST), then $VERSION. Composing $VERSION now would bury $NEWEST unreleased under it."
+    echo "(./scripts/release.sh \"<message>\" $NEWEST), then $VERSION. Composing $VERSION now would bury $NEWEST unreleased under it."
     exit 1
   fi
   if [[ -n "$LAST_TAG" ]] && [[ "$(git rev-list --count "$LAST_TAG..HEAD")" == 0 ]]; then
@@ -206,7 +206,7 @@ ACTION="$(bash scripts/changelog-section.sh --consumer-action "$VERSION" "$CHANG
 IFS='.' read -r VMA VMI _ <<< "$VERSION"
 NEXT_MINOR="$VMA.$((VMI + 1)).0"
 if [[ "$AUTO_VERSION" == 1 ]] && { grep -Eq '^[a-z]+(\([a-z0-9-]+\))?!:|^feat' <<< "$MSG" || grep -q 'BREAKING CHANGE' <<< "$MSG"; }; then
-  echo "A feat or breaking release needs an explicit version: ./release.sh \"$MSG\" <X.Y.Z> (see $CONTRACT)."
+  echo "A feat or breaking release needs an explicit version: ./scripts/release.sh \"$MSG\" <X.Y.Z> (see $CONTRACT)."
   exit 1
 fi
 # Akcja konsumenta zapisana w historii od poprzedniego wydania (N-REL-7): trailer "Consumer-Action: …", "!"
@@ -237,9 +237,9 @@ fi
 if [[ "${VERSION%.*}" == "${CUR%.*}" ]] && ! [[ "$ACTION" =~ ^None\.?$ ]]; then
   echo "CHANGELOG.md lists consumer action for $VERSION, so it must be a MINOR release:"
   if [[ -n "$COMPOSED_FROM" ]]; then
-    echo "  ./release.sh \"$MSG\" $NEXT_MINOR"
+    echo "  ./scripts/release.sh \"$MSG\" $NEXT_MINOR"
   else
-    echo "  rename the section to $NEXT_MINOR, commit, then: ./release.sh \"$MSG\" $NEXT_MINOR"
+    echo "  rename the section to $NEXT_MINOR, commit, then: ./scripts/release.sh \"$MSG\" $NEXT_MINOR"
   fi
   echo "See $CONTRACT."
   exit 1

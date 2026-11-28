@@ -6,7 +6,7 @@
 #   scripts/consumer-audit.sh              # na żywo: wyłącznie GET przez `gh api` (wymaga `gh auth login`)
 #   scripts/consumer-audit.sh --from DIR   # offline: DIR/<owner>/<name>/ z plikami repo i branches.txt
 #
-# Wynik opisuje prywatne repozytoria: uruchamiaj lokalnie przed ./release.sh, nie w CI ani w publicznym logu.
+# Wynik opisuje prywatne repozytoria: uruchamiaj lokalnie przed ./scripts/release.sh, nie w CI ani w publicznym logu.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
