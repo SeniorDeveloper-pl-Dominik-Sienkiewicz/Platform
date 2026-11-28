@@ -20,22 +20,39 @@ artifact was published. Its tag was removed and releases continued under the per
 
 ## [Unreleased]
 
-## [2.1.2] - 2026-11-27
+## [2.2.0] - 2026-11-28
 
 ### Consumer action required
 
-None.
-
-### Fixed
-
-- update frontend canon (8726f9f)
-- Keep Renovate release candidates in draft until CI verifies the prepared commit against current `main`.
-  Only one candidate becomes ready for review at a time.
+- If your cluster's admission policy pins the signer subject of promoted images to
+  `deploy.yml@d88288965f4377fbab95db2f850aa70a1d0a2d3f`, allow
+  `deploy.yml@1337c3f7db80b969d4462d9728c4c95bd03a5c47` before promoting with this release.
+  Policies that match the workflow by the documented ref pattern already cover the new SHA. (bf3ab17)
+- Add `// quarantine: <issue-url> until YYYY-MM-DD` above tests quarantined through a static-import
+  `QUARANTINE` constant, `@Tag(value = "quarantine")` or a quarantine meta-annotation.
+  `platformQuarantineCheck` now recognizes these forms and requires the comment (PLAT-QUA-001). (0890aeb)
 
 ### Changed
 
-- Update the frontend canon to `@types/node` 25.9.12 and `@types/react` 19.3.2 (#21).
+- Update the frontend canon, including `@types/node` 25.9.12, `@types/react` 19.3.2,
+  `@types/react-dom` 19.3.0, Tailwind CSS 4.3.5, `@vitejs/plugin-react` 6.3.0 and Prettier 3.10.1 (#21).
 - Update CodeQL to 4.39.5 and cosign-installer to 4.1.4 (#22).
+- Attest Maven POM and Gradle module metadata, including the Platform BOM. When provenance verification
+  is enabled, backend CI also verifies the catalog TOML and the published metadata.
+- Scan migration and `eval-worker` images when image scanning is enabled. Findings at the configured
+  threshold produce warnings and leave the affected images unsigned.
+- Move Platform maintenance commands, including `release.sh` and `merge.sh`, to `scripts/`.
+
+### Fixed
+
+- Keep Renovate release candidates in draft until CI verifies the prepared commit against current
+  `main`. Mark one candidate ready at a time and refresh the others after a dependency release is tagged.
+- Synchronize the pnpm lockfile with the updated frontend type dependencies.
+- Harden `platform-bump` workflow updates and fetch release notes across all pages of the GitHub release list.
+  Skip Gradle regeneration when the bump leaves Gradle inputs untouched.
+- Report all required consumer actions for changes to reusable workflows and the Java toolchain.
+- Fail the Semgrep gate on scanner errors even when the scanner writes a JSON report.
+- Enforce the expiration date of the Tomcat exception in the dependency scan.
 
 ## [2.1.1] - 2026-11-27
 
