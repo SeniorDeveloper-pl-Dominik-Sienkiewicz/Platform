@@ -211,7 +211,8 @@ automatically. [GitHub workflow triggers](https://docs.github.com/en/actions/how
    with the version and release date.
 3. Commit and push those changes through the normal branch and merge flow, so `main` equals
    `origin/main` with a clean tree.
-4. Run the release helper and confirm the displayed version and notes.
+4. Run the release helper and confirm the displayed version and notes. It uses authenticated GitHub CLI
+   (`gh auth login`) to check the latest push run of `ci.yml` for the exact commit on `main`.
 
 ```bash
 ./scripts/release.sh
@@ -246,6 +247,8 @@ Before it changes anything, `release.sh` refuses to run when:
 
 - the working tree is not clean (untracked files included), the current branch is not `main`, or
   `HEAD` differs from `origin/main`;
+- the latest push run of `ci.yml` for that exact `main` commit did not complete successfully, or
+  GitHub CLI cannot retrieve its status;
 - the release tags cannot be fetched from `origin`, for example because a local tag differs from the one on
   `origin` (it fetches them first, so the composed notes and the history check start at the latest release
   even when its tag was pushed after this clone fetched the commit);

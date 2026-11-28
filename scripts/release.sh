@@ -10,7 +10,8 @@
 # samej sekcji.
 #
 # Odmawia przed jakąkolwiek zmianą, gdy drzewo robocze nie jest czyste, bieżąca gałąź to nie
-# main albo HEAD różni się od origin/main. Commit wydania obejmuje wersje, złożone notatki i oczekujący wiersz macierzy zgodności.
+# main, HEAD różni się od origin/main albo GitHub nie potwierdza zielonego CI dla tego commita.
+# Commit wydania obejmuje wersje, złożone notatki i oczekujący wiersz macierzy zgodności.
 # Kontrakt (docs/adr/0002-release-and-versioning-contract.md) — odmawia też, gdy:
 #   - message nie jest angielskim Conventional Commit;
 #   - ręcznie napisana sekcja wersji nie ma podsekcji "### Consumer action required";
@@ -245,6 +246,40 @@ if [[ "${VERSION%.*}" == "${CUR%.*}" ]] && ! [[ "$ACTION" =~ ^None\.?$ ]]; then
   exit 1
 fi
 
+require_green_main_ci() {
+  local sha="$1" origin repo run run_sha branch event status conclusion url
+  if ! command -v gh > /dev/null; then
+    echo "GitHub CLI (gh) is required to verify CI on main at $sha." >&2
+    return 1
+  fi
+
+  origin=$(git config --get remote.origin.url)
+  case "$origin" in
+    https://github.com/* | ssh://git@github.com/*) repo=${origin#*github.com/} ;;
+    git@github.com:*) repo=${origin#git@github.com:} ;;
+    *)
+      echo "Cannot verify CI on main at $sha: origin must point to a GitHub repository." >&2
+      return 1
+      ;;
+  esac
+  repo=${repo%/}
+  repo=${repo%.git}
+
+  if ! run=$(gh run list --repo "github.com/$repo" --workflow ci.yml --branch main --event push \
+    --commit "$sha" --limit 1 --json headSha,headBranch,event,status,conclusion,url \
+    --jq '.[0] // empty | [.headSha,.headBranch,.event,.status,.conclusion,.url] | join("|")'); then
+    echo "Could not check CI on main at $sha. Check GitHub CLI authentication and try again." >&2
+    return 1
+  fi
+
+  IFS='|' read -r run_sha branch event status conclusion url <<< "$run"
+  if [[ "$run_sha" != "$sha" || "$branch" != main || "$event" != push || "$status" != completed || "$conclusion" != success ]]; then
+    echo "Release requires successful CI on main at $sha (status: ${status:-missing}, conclusion: ${conclusion:-none})." >&2
+    if [[ -n "$url" ]]; then printf '%s\n' "$url" >&2; fi
+    return 1
+  fi
+}
+
 echo "Plan: $CUR -> $VERSION   branch: $BR   commit: \"chore(release): platform $VERSION\""
 if [[ -n "$COMPOSED_FROM" ]]; then
   echo "Release notes (composed from the commits since $COMPOSED_FROM; the release commit adds them to CHANGELOG.md):"
@@ -256,6 +291,8 @@ if [[ "${3:-}" != "-y" ]] && [[ "${ASSUME_YES:-}" != "1" ]]; then
   read -r -p "Continue (commit, tag v$VERSION and push)? [y/N] " ans
   [[ "$ans" = "y" ]] || [[ "$ans" = "Y" ]] || { echo "Aborted."; exit 0; }
 fi
+
+require_green_main_ci "$planned_head"
 
 if [[ "$(git symbolic-ref --quiet --short HEAD)" != main || "$(git rev-parse HEAD)" != "$planned_head" || -n "$(git status --porcelain --untracked-files=all)" ]]; then
   echo "The checkout changed after planning the release. Review the changes and run release.sh again." >&2

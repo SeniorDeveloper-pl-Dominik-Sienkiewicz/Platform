@@ -2,8 +2,11 @@
 # Wydanie bez argumentów z pełnej historii, wyłącznie do lokalnego bare origin.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
+# shellcheck source=templates/tests/lib/release-ci.sh
+source "$root/templates/tests/lib/release-ci.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+use_green_release_ci "$tmp"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 unset ASSUME_YES
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -13,7 +16,7 @@ git init -q -b main "$tmp/work"
 cd "$tmp/work"
 git config user.name 'Release Test'
 git config user.email 'release-test@example.invalid'
-git remote add origin "$tmp/origin.git"
+add_release_test_origin "$tmp/work" "$tmp/origin.git"
 mkdir -p gradle/build-logic frontend/packages/example scripts docs
 cp "$root/scripts/"{release,changelog-section,release-notes}.sh scripts/
 printf 'platformVersion=2.0.1\n' > gradle/build-logic/gradle.properties
