@@ -4,7 +4,7 @@
 set -uo pipefail
 
 CANON="${MERGE_SCRIPT:-$(cd "$(dirname "$0")/.." && pwd)/merge.sh}"
-PLATFORM_DELEGATE="$(cd "$(dirname "$0")/../.." && pwd)/merge.sh"
+PLATFORM_DELEGATE="$(cd "$(dirname "$0")/../.." && pwd)/scripts/merge.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -100,8 +100,8 @@ test_platform_delegate_exposes_canonical_help() {
   local output
   output="$("$PLATFORM_DELEGATE" --help)"
 
-  assert_contains "$output" "merge.sh — safely integrate" "Platform root delegate should execute the canonical helper"
-  assert_contains "$output" "--discard-worktree-changes" "Platform root delegate should expose canonical options"
+  assert_contains "$output" "merge.sh — safely integrate" "Platform delegate should execute the canonical helper"
+  assert_contains "$output" "--discard-worktree-changes" "Platform delegate should expose canonical options"
   return $?
 }
 
