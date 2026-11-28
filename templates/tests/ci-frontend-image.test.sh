@@ -3,7 +3,7 @@
 # BuildKit github_token i tylko w mapowaniach env: (nigdy --build-arg, echo ani rozwinięcie w run:), packages: read,
 # bez persist-credentials, npm z --ignore-scripts. Resztę joba (kolejność kroków, wejścia akcji, sprzątanie
 # kontenera) sprawdza sam przebieg CI, który buduje i sonduje obraz, oraz actionlint. Bloki między markerami
-# frontend-image-* biegną naprawdę: filtr wejść obrazu, wersja z ostatniego tagu wydania przed HEAD, komplet paczek
+# frontend-image-* biegną naprawdę: filtr wejść obrazu, ostatnie opublikowane wydanie przed HEAD, komplet paczek
 # tego wydania i ograniczone w czasie czekanie na odpowiedź kontenera (docker, curl i sleep to atrapy, bez sieci
 # i bez budowania obrazu).
 # shellcheck disable=SC2016 # literal GitHub expressions and shell variables in patterns
@@ -93,22 +93,44 @@ tag v1.9.0 "$base"
 tag -a -m 'Platform 1.10.0' v1.10.0 "$docs"
 tag v1 "$image"
 tag v1.11.0-rc.1 "$image"
+tag v1.11.0 "$image"
 git -C "$repo" checkout -q main
 echo 'FROM node:24-slim AS runner' > "$repo/templates/Dockerfile.frontend"
 head=$(commit head)
 tag v1.12.0 "$head"
+git -C "$repo" checkout -q --detach "$docs"
+echo other > "$repo/README.md"
+other=$(commit other)
+tag v9.0.0 "$other"
+
+mkdir -p "$tmp/release-bin"
+cat > "$tmp/release-bin/gh" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $1 == api && $2 == --paginate && $3 == 'repos/example/Platform/releases?per_page=100' && $4 == --jq ]]
+[[ ${RELEASE_LOOKUP:-ok} == ok ]] || exit 1
+printf '%s\n' v1.9.0 v1.10.0 v1.11.0-rc.1 v1.12.0 v9.0.0
+STUB
+chmod +x "$tmp/release-bin/gh"
 
 # release <head>: wypisuje wersję wybraną dla biegu na <head>
 release() {
   git -C "$repo" checkout -q "$1"
   : > "$tmp/output"
-  (cd "$repo" && GITHUB_OUTPUT="$tmp/output" bash "$tmp/release.sh" > "$tmp/out" 2>&1) || return 1
+  (cd "$repo" && PATH="$tmp/release-bin:$PATH" GITHUB_REPOSITORY=example/Platform \
+    GITHUB_OUTPUT="$tmp/output" bash "$tmp/release.sh" > "$tmp/out" 2>&1) || return 1
   sed -n 's/^version=//p' "$tmp/output"
 }
-[[ "$(release "$head")" == 1.10.0 ]] || fail 'the release gate on v1.12.0 must take the newest vX.Y.Z before it (semver order, no v1, no rc)'
+[[ "$(release "$head")" == 1.10.0 ]] || fail 'the release gate on v1.12.0 must take the newest published vX.Y.Z on its history (skip bare tags, other branches and RCs)'
 [[ "$(release "$docs")" == 1.9.0 ]] || fail 'a tag at HEAD or after it is not published yet and must be skipped'
 if release "$base" > /dev/null; then fail 'without a release tag before HEAD the step must fail'; fi
 grep -qF '::error::No release tag' "$tmp/out" || fail 'the missing release tag must be named'
+if RELEASE_LOOKUP=failed release "$head" > /dev/null; then fail 'API failure must stop baseline selection'; fi
+grep -qF '::error::Could not list published Platform releases' "$tmp/out" || fail 'the API failure must be named'
+if [[ ${1:-} == release-selection ]]; then
+  echo 'OK: frontend image chooses the newest published release in the checkout history'
+  exit 0
+fi
 
 # --- Komplet paczek wydania ------------------------------------------------------------------------------------
 block shipped

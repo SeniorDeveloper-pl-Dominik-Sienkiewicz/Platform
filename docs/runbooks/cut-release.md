@@ -8,7 +8,8 @@ Wait for the new version proposal and its CI before merging the next dependency 
 Merge the candidate the readiness workflow marked ready. A tree or version refusal after merging
 requires a manual release from the combined, reviewed changes on current `main`.
 
-**Manual release preconditions:** `main` is green and equal to `origin/main`, and the working tree is clean.
+**Manual release preconditions:** `main` equals `origin/main`, the working tree is clean, and `gh` is authenticated.
+The helper requires a successful `ci.yml` push run for the exact `main` commit before it creates the release tag.
 `scripts/release-notes.sh v<previous>..HEAD` shows the notes since the last tag.
 
 1. Optional: to write the notes by hand, turn `## [Unreleased]` into `## [X.Y.Z] - YYYY-MM-DD` with a

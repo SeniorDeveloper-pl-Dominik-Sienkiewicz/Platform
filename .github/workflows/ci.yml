@@ -172,17 +172,30 @@ jobs:
           echo "build=$build" >> "$GITHUB_OUTPUT"
           [ "$build" = true ] || echo "::notice::No input of the frontend image changed, so it is not built."
           # <<< frontend-image-changes
-      - name: Find the latest release
+      - name: Find the latest published release
         id: release
         if: ${{ steps.changes.outputs.build == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # >>> frontend-image-release
           set -euo pipefail
-          # Tag na HEAD albo za nim to wydanie, które ten bieg dopiero bramkuje (Release woła ci.yml jako verify),
-          # więc jego paczek jeszcze nie opublikowano. Ruchomy v1 i tagi spoza vX.Y.Z odpadają.
-          tags=$(git tag --list 'v*' --no-contains HEAD --sort=-v:refname)
-          tag=$(awk '/^v[0-9]+\.[0-9]+\.[0-9]+$/ { print; exit }' <<<"$tags")
-          [ -n "$tag" ] || { echo "::error::No release tag vX.Y.Z before HEAD to take the Platform packages from."; exit 1; }
+          # Tag może powstać przed nieudaną publikacją. GitHub Release powstaje po publikacji Maven i npm.
+          published=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false and .published_at != null) | .tag_name') || {
+            echo "::error::Could not list published Platform releases."
+            exit 1
+          }
+          # Bierzemy tylko stabilne tagi na przodkach HEAD, od najwyższej wersji.
+          tags=$(git tag --list 'v*' --merged HEAD --no-contains HEAD --sort=-v:refname)
+          tag=
+          while IFS= read -r candidate; do
+            if [[ "$candidate" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && grep -Fxq -- "$candidate" <<< "$published"; then
+              tag=$candidate
+              break
+            fi
+          done <<< "$tags"
+          [ -n "$tag" ] || { echo "::error::No release tag vX.Y.Z with a published GitHub Release before HEAD."; exit 1; }
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           echo "The frontend pins the packages of Platform $tag."
           # <<< frontend-image-release

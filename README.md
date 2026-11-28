@@ -211,7 +211,8 @@ changelogs based on `main`. [Setup and release procedure](RELEASING.md#daily-dep
 ### From a tag to a consumer pull request
 
 For a manual release, run `./scripts/release.sh` on a clean `main` synchronized with `origin/main`.
-It shows the proposed version and release notes for confirmation. [Release runbook](docs/runbooks/cut-release.md)
+It shows the proposed version and release notes for confirmation, then checks that CI passed on that exact
+`main` commit before creating the release commit and tag. [Release runbook](docs/runbooks/cut-release.md)
 
 Read it top to bottom: nothing is published before `ci.yml` passes on the tagged commit, and a consumer adopts
 the release through a pull request, never by itself.

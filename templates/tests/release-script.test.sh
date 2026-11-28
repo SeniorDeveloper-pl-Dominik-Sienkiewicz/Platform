@@ -4,6 +4,8 @@
 # i podbicie wersji, kontrakt wydań i wersjonowania, pozostałe odmowy oraz akcja konsumenta zapisana w historii.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
+# shellcheck source=templates/tests/lib/release-ci.sh
+source "$root/templates/tests/lib/release-ci.sh"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # --- refuse-and-bump ---
@@ -16,6 +18,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 (
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+use_green_release_ci "$tmp"
 
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
@@ -57,7 +60,7 @@ seed_repo() {
   echo '# fixture' > "$work/README.md"
   git -C "$work" add -A
   git -C "$work" commit -q -m initial
-  git -C "$work" remote add origin "$origin"
+  add_release_test_origin "$work" "$origin"
   git -C "$work" push -q -u origin main >/dev/null
   printf '%s\n' "$work"
 }
@@ -126,6 +129,9 @@ for older in 1.2.2 "$CURRENT" 0.9.9; do
 done
 
 work=$(seed_repo clean)
+RELEASE_CI_RESULT=failed assert_refused "$work" 'failed CI on main'
+grep -qF 'Release requires successful CI on main at' "$work.log" || fail 'failed CI must explain the refusal'
+if git -C "$work" show-ref --verify --quiet "refs/tags/v$NEXT"; then fail 'failed CI must not create a local tag'; fi
 if ! run_release "$work"; then
   cat "$work.log" >&2
   fail 'release.sh must release a clean main that matches origin/main'
@@ -173,6 +179,7 @@ echo 'OK: release.sh refuses unsafe trees and commits only the version bump'
 (
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+use_green_release_ci "$tmp"
 
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
@@ -201,7 +208,7 @@ seed_repo() {
   cp "$root/scripts/release-notes.sh" "$work/scripts/release-notes.sh"
   git -C "$work" add -A
   git -C "$work" commit -q -m initial
-  git -C "$work" remote add origin "$origin"
+  add_release_test_origin "$work" "$origin"
   git -C "$work" push -q -u origin main >/dev/null
   printf '%s\n' "$work"
 }
@@ -296,6 +303,7 @@ echo 'OK: release.sh enforces the message, CHANGELOG and MINOR rules and annotat
 (
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+use_green_release_ci "$tmp"
 
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
@@ -316,7 +324,7 @@ seed_repo() {
   cp "$root/scripts/release-notes.sh" "$work/scripts/release-notes.sh"
   git -C "$work" add -A
   git -C "$work" commit -q -m initial
-  git -C "$work" remote add origin "$origin"
+  add_release_test_origin "$work" "$origin"
   git -C "$work" push -q -u origin main > /dev/null
   printf '%s\n' "$work"
 }
@@ -379,6 +387,7 @@ echo 'OK: release.sh refuses an empty message, an existing tag and stray argumen
 (
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+use_green_release_ci "$tmp"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 section() {
@@ -409,7 +418,7 @@ seed() {
   printf '%s\n\n%s' "# Changelog" "$4" > "$work/CHANGELOG.md"
   git -C "$work" add -A
   git -C "$work" commit -q -m "$3"
-  git -C "$work" remote add origin "$origin"
+  add_release_test_origin "$work" "$origin"
   git -C "$work" push -q -u origin main >/dev/null
   printf '%s\n' "$work"
 }
