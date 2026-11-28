@@ -529,7 +529,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Check the proposed dependency release
+      - name: Check the proposed dependency release (PR ${{ github.event.pull_request.number }}, base ${{ github.event.pull_request.base.sha }})
         if: >-
           github.event_name == 'pull_request' &&
           github.event.pull_request.head.repo.full_name == github.repository &&

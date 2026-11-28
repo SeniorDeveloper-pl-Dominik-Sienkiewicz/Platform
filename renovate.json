@@ -4,7 +4,8 @@
   "extends": ["github>SeniorDeveloper-pl-Dominik-Sienkiewicz/Platform"],
   "schedule": ["at any time"],
   "ignoreUnstable": true,
-  "prBodyNotes": ["The daily job adds the Platform version and changelog to this branch. Review the release notes and merge after CI passes. Merging publishes the reviewed release after verification."],
+  "draftPR": true,
+  "prBodyNotes": ["The daily job adds the Platform version and changelog to this branch. The PR becomes ready for review after CI passes on the prepared commit against current main. Merging publishes the reviewed release after verification."],
   "packageRules": [
     {
       "description": "Mark upstream major updates for migration review and a Platform minor release.",

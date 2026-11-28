@@ -149,7 +149,14 @@ automatically. [GitHub workflow triggers](https://docs.github.com/en/actions/how
 
 ### Reviewing and publishing an update
 
-1. Open the Renovate PR. The daily job refreshes affected Gradle locks and checksums, the backend stack
+1. Renovate opens drafts. [Dependency PR readiness](.github/workflows/dependency-pr-readiness.yml)
+   keeps one prepared PR ready for review at a time. It checks the latest CI run for the current head
+   and the successful release check for that PR and exact `main` commit. A failed preparation leaves
+   the PR in draft. A push to `main` prompts a fresh check of open PRs and returns stale candidates to
+   draft. If the ready PR closes, the workflow checks the remaining drafts. You can also run the
+   readiness workflow manually on `main` after a GitHub API failure.
+
+   The daily job refreshes affected Gradle locks and checksums, the backend stack
    snapshot and the pnpm lockfile. It adds the proposed Platform version and changelog to the same PR.
    Check the dependency diff, new checksums, advisory IDs for security fixes and the consumer-action notes.
 2. Wait for CI on the prepared commit. A compatible update gets the next PATCH. An upstream major
@@ -160,7 +167,10 @@ automatically. [GitHub workflow triggers](https://docs.github.com/en/actions/how
    compares the merged tree with the reviewed head. The dependency App creates the annotated tag
    on the merge commit. That tag push starts `release.yml` once. Full CI must pass before Maven
    or npm publication.
-   If tagging fails, rerun the post-merge job. It verifies an existing tag against the commit
+   A tree mismatch or an invalid version is permanent for that merge. Review the combined changes
+   on current `main`, include them in any pending hand-written notes, and follow [Cutting a release](#cutting-a-release).
+   The same recovery applies when a pending dated section prevents the daily job from preparing a PR.
+   For a transient GitHub API failure, rerun the post-merge job. It verifies an existing tag against the commit
    and release notes. If a Release run fails, rerun its failed jobs. If an existing tag has no
    Release run, confirm its commit and notes with the tagging job, then use the manual dispatch
    on that tag described below.

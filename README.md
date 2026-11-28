@@ -201,7 +201,8 @@ Renovate preset is read from `main` on every Renovate run. There is no floating 
 pins the exact tag ([ADR-0002](docs/adr/0002-release-and-versioning-contract.md)).
 
 At 04:23 UTC each day, GitHub Actions checks the JVM catalog, frontend canon and GitHub Actions
-pins for stable updates. Renovate opens a PR with the proposed dependencies. The daily job adds the
+pins for stable updates. Renovate opens draft PRs. One at a time becomes ready for review after CI
+checks its prepared commit against the current tip of `main`. The daily job adds the
 Platform version, lockfiles, checksums and changelog. Merging the reviewed PR tags the merge commit
 and starts release verification. [Setup and release procedure](RELEASING.md#daily-dependency-releases).
 
@@ -222,6 +223,7 @@ sequenceDiagram
     participant B as platform-bump.yml
     participant C as Consumer repository
 
+    Note over M,R: Dependency PRs become ready one at a time after CI against current main
     alt Dependency update
         M->>R: Merge dependency PR (the App pushes the version tag)
     else Maintainer release

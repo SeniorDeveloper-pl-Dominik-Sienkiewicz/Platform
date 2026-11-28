@@ -4,6 +4,9 @@ For a dependency update prepared by the daily workflow, review its version and c
 the PR on GitHub. The merge triggers release verification on the new tag.
 [Daily dependency releases](../../RELEASING.md#daily-dependency-releases).
 
+Merge the candidate the readiness workflow marked ready. A tree or version refusal after merging
+requires a manual release from the combined, reviewed changes on current `main`.
+
 **Manual release preconditions:** `main` is green and equal to `origin/main`, and the working tree is clean.
 `scripts/release-notes.sh v<previous>..HEAD` shows the notes since the last tag.
 

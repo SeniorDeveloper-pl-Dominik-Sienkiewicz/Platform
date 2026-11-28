@@ -1,0 +1,52 @@
+name: Dependency PR readiness
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [CI, Daily dependency updates]
+    types: [requested, in_progress, completed]
+  pull_request_target:
+    branches: [main]
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  reconcile:
+    concurrency:
+      group: dependency-pr-readiness
+      cancel-in-progress: false
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'pull_request_target' && github.event.pull_request.user.type == 'Bot' &&
+         github.event.pull_request.head.repo.full_name == github.repository &&
+         startsWith(github.event.pull_request.head.ref, 'renovate/')) ||
+        (github.event.workflow_run.name == 'Daily dependency updates' && github.event.action == 'completed') ||
+        (github.event.workflow_run.event == 'pull_request' &&
+         github.event.workflow_run.head_repository.full_name == github.repository &&
+         startsWith(github.event.workflow_run.head_branch, 'renovate/')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        id: app
+        with:
+          client-id: ${{ vars.DEPENDENCY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DEPENDENCY_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+      - name: Select the prepared dependency PR for review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_TOKEN: ${{ steps.app.outputs.token }}
+          BOT: ${{ steps.app.outputs.app-slug }}[bot]
+        run: python3 scripts/dependency-pr-readiness.py
