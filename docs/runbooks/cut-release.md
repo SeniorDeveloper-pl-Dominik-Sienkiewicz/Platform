@@ -5,6 +5,9 @@ the PR on GitHub. Tagging starts release verification and refreshes the remainin
 Wait for the new version proposal and its CI before merging the next dependency PR.
 [Daily dependency releases](../../RELEASING.md#daily-dependency-releases).
 
+Merge the candidate the readiness workflow marked ready. A tree or version refusal after merging
+requires a manual release from the combined, reviewed changes on current `main`.
+
 **Manual release preconditions:** `main` is green and equal to `origin/main`, and the working tree is clean.
 `scripts/release-notes.sh v<previous>..HEAD` shows the notes since the last tag.
 

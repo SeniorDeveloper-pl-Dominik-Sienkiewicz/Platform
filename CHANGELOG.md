@@ -29,6 +29,13 @@ None.
 ### Fixed
 
 - update frontend canon (8726f9f)
+- Keep Renovate release candidates in draft until CI verifies the prepared commit against current `main`.
+  Only one candidate becomes ready for review at a time.
+
+### Changed
+
+- Update the frontend canon to `@types/node` 25.9.12 and `@types/react` 19.3.2 (#21).
+- Update CodeQL to 4.39.5 and cosign-installer to 4.1.4 (#22).
 
 ## [2.1.1] - 2026-11-27
 
